@@ -1,0 +1,19 @@
+{
+  "name": "space-game",
+  "version": "0.1.0",
+  "description": "Browser-first realistic space combat game (Three.js + Newtonian physics)",
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/physics.test.js",
+    "start": "python3 -m http.server 8000 --bind 0.0.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bporecruitment027/Space-Game.git"
+  },
+  "keywords": ["threejs", "webgl", "space-combat", "newtonian-physics"],
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.160.0"
+  }
+}

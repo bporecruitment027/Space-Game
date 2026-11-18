@@ -1,0 +1,76 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  width: 100%; height: 100%; overflow: hidden;
+  background: #05080f; color: #cfe3ff;
+  font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+}
+
+#game { display: block; width: 100%; height: 100%; }
+
+.panel {
+  position: fixed; z-index: 10;
+  background: rgba(8, 16, 30, 0.72);
+  border: 1px solid rgba(110, 170, 255, 0.35);
+  border-radius: 8px;
+  padding: 12px 14px;
+  backdrop-filter: blur(4px);
+  font-size: 13px; line-height: 1.7;
+  pointer-events: none;
+}
+
+#hud { top: 14px; left: 14px; width: 210px; }
+#controls { bottom: 14px; left: 14px; }
+
+.hud-title {
+  font-size: 11px; letter-spacing: 2px; color: #7fe3ff;
+  border-bottom: 1px solid rgba(110, 170, 255, 0.3);
+  padding-bottom: 6px; margin-bottom: 8px;
+}
+
+.hud-row {
+  display: flex; justify-content: space-between; align-items: center;
+  color: #9db8d8;
+}
+.hud-row strong { color: #eaf4ff; font-variant-numeric: tabular-nums; }
+
+.boost-bar {
+  width: 90px; height: 8px; border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12); overflow: hidden;
+}
+#hud-boost {
+  height: 100%; width: 100%;
+  background: linear-gradient(90deg, #ff8c2e, #ffd166);
+  transition: width 0.1s linear;
+}
+
+#hud-compass { display: block; margin: 10px auto 2px; }
+.hud-hint { text-align: center; color: #6f8db0; font-size: 11px; }
+
+kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 3px; padding: 0 5px;
+  font-family: inherit; font-size: 11px; color: #eaf4ff;
+}
+
+.hud-note { color: #ffb347; margin-top: 6px; font-size: 12px; }
+
+#paused {
+  position: fixed; inset: 0; z-index: 20;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(3, 6, 12, 0.6);
+  font-size: 22px; letter-spacing: 3px; color: #7fe3ff;
+}
+#paused.hidden { display: none; }
+
+#loading {
+  position: fixed; inset: 0; z-index: 30;
+  display: flex; align-items: center; justify-content: center;
+  background: #05080f; color: #7fe3ff; letter-spacing: 2px;
+}
+
+@media (max-width: 640px) {
+  #hud { width: 170px; font-size: 12px; }
+  #controls { display: none; } /* touch controls arrive in Milestone 6 */
+}

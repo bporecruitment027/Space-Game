@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Space Combat — Milestone 1: Newtonian Flight Prototype</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
+  </script>
+</head>
+<body>
+  <canvas id="game"></canvas>
+
+  <!-- Flight readouts -->
+  <div id="hud" class="panel">
+    <div class="hud-title">NEWTONIAN FLIGHT PROTOTYPE</div>
+    <div class="hud-row"><span>Velocity</span><strong id="hud-speed">0.0 m/s</strong></div>
+    <div class="hud-row"><span>Heading</span><strong id="hud-heading">000°</strong></div>
+    <div class="hud-row"><span>Thrust</span><strong id="hud-thrust">0%</strong></div>
+    <div class="hud-row"><span>Drift angle</span><strong id="hud-drift">0°</strong></div>
+    <div class="hud-row"><span>Kinetic energy</span><strong id="hud-energy">0.0 kJ</strong></div>
+    <div class="hud-row"><span>Camera</span><strong id="hud-mode">OVERHEAD</strong></div>
+    <div class="hud-row"><span>FPS</span><strong id="hud-fps">60 fps</strong></div>
+    <div class="hud-row boost-row"><span>Boost</span>
+      <div class="boost-bar"><div id="hud-boost"></div></div>
+    </div>
+    <canvas id="hud-compass" width="72" height="72"></canvas>
+    <div class="hud-hint">▲ nose &nbsp;·&nbsp; ● velocity</div>
+  </div>
+
+  <!-- Controls reference -->
+  <div id="controls" class="panel">
+    <div class="hud-title">CONTROLS</div>
+    <div><kbd>W</kbd>/<kbd>↑</kbd> thrust &nbsp; <kbd>S</kbd>/<kbd>↓</kbd> retro</div>
+    <div><kbd>A</kbd><kbd>D</kbd> / <kbd>←</kbd><kbd>→</kbd> yaw (RCS)</div>
+    <div><kbd>X</kbd> or <kbd>Space</kbd> autobrake</div>
+    <div><kbd>Shift</kbd> boost (limited) &nbsp; <kbd>R</kbd> reset</div>
+    <div><kbd>C</kbd> camera &nbsp; <kbd>P</kbd> pause</div>
+    <div class="hud-note">No drag in space: cut thrust and you keep drifting.<br/>Brake before you reach the rocks.</div>
+  </div>
+
+  <div id="paused" class="hidden">PAUSED — press P to resume</div>
+
+  <div id="loading">Loading physics prototype…</div>
+
+  <script type="module">
+    // Hide the loading veil once the module graph is ready.
+    document.getElementById('loading').remove();
+    await import('./src/main.js');
+  </script>
+</body>
+</html>
