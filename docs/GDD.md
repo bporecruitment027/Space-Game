@@ -1,12 +1,12 @@
 # Space Combat — Game Design Document
 
-**Status:** Milestone 2 (Vertical Slice) — combat prototype delivered.
+**Status:** Milestone 3 (Core Mechanics & MVP) — loadouts, sensors, and skirmish mode delivered.
 **Last updated:** 2026-11-18
 
 This document is the living design spec for the roadmap. Each milestone
-below maps to the development roadmap; Milestones 1 and 2 are
-implemented in this branch. Later milestones extend it without changing
-the core flight model.
+below maps to the development roadmap; Milestones 1–3 are implemented
+in this branch. Later milestones extend it without changing the core
+flight model.
 
 ---
 
@@ -107,7 +107,33 @@ entry point: AI decisions → ship updates → bolt/collision rules →
 death checks. It is rendering-agnostic, so the same step runs in tests
 and, in Milestone 4, on the authoritative server.
 
-## 6. Technology decisions
+## 6. Loadouts & sensors (Milestone 3)
+
+**Loadouts are data.** A loadout is `{ hull, weapon, modules[] }` and
+all derived stats come from `src/modules/Modules.js`:
+
+| Part | Options | Effect |
+|---|---|---|
+| Hull | Fighter, Bulwark | mass, inertia, thrust, base HP, size |
+| Weapon | Laser, Railgun | damage, fire rate, bolt speed |
+| Modules (max 2) | Sensor Array, Reinforced Armor | +sensor range, +HP |
+
+The loadout picker validates selections and shows derived stats before
+deploy. `Game.deploy(loadout)` rebuilds the player ship from the
+composition — adding a new hull or weapon is a table entry, not code.
+
+**Sensors & fog of war.** Every ship has a sensor range (base 65 m,
++70 m with Sensor Array). Targets within range become **live contacts**
+(radar: solid marker); when they leave range they decay into **ghosts**
+(fading outline) over ~4.5 s and then vanish — unless re-detected. The
+radar shows both, so the player can read pursuit from the last-known
+positions. A target that was never detected produces no contact at all.
+
+**Skirmish flow.** Loadout screen → deploy → fight → on death, back to
+the loadout screen with the score shown. The run loop is driven by
+`Game`'s state machine: `deploying` → `running` → `over` → `deploying`.
+
+## 7. Technology decisions
 
 | Concern | Choice | Rationale |
 |---|---|---|
@@ -117,7 +143,7 @@ and, in Milestone 4, on the authoritative server.
 | Networking | Deferred (Milestone 4) | Physics module is already render-independent so it can run server-side unchanged. |
 | Packaging | Deferred (Milestone 6) | PWA manifest + service worker; pixel ratio already capped at 1.5. |
 
-## 7. Milestone plan (from the roadmap)
+## 8. Milestone plan (from the roadmap)
 
 - **M1 — Concept & Pre-Production:** design spec + runnable
   demo: one ship under Newtonian physics, overhead follow camera,
@@ -136,7 +162,7 @@ and, in Milestone 4, on the authoritative server.
 - **M7 — Release & Post-Release:** Playwright tests, Sentry telemetry,
   store submission, live-ops patches.
 
-## 8. Acceptance criteria
+## 9. Acceptance criteria
 
 **Milestone 1**
 - [x] Written design spec (this document).
@@ -153,13 +179,19 @@ and, in Milestone 4, on the authoritative server.
 - [x] One playable arena; reset and game-over flows work.
 - [x] Combat unit tests pass (`npm test` — 22 tests).
 
-- [x] Written design spec (this document).
-- [x] Runnable browser demo: one ship with mass/inertia physics —
-      thrust causes realistic drift, rotation via torque.
-- [x] Overhead camera follows the ship; keyboard thrust + rotation work.
-- [x] Physics unit tests pass (`npm test`).
+**Milestone 3**
+- [x] Loadout system: hull + weapon + module slots, all data-driven
+      (`src/modules/Modules.js`); stats derived from the composition.
+- [x] Skirmish mode: loadout-picker screen with live stat preview,
+      deploy → fight → game-over → redeploy loop.
+- [x] Sensors + fog of war: contacts within range are live, lost
+      contacts decay to fading ghosts on the radar.
+- [x] Radar overlay: live contacts (solid) vs ghosts (fading outline).
+- [x] Weapon variety: laser (fast, light) and railgun (slow, heavy).
+- [x] Module variety: Sensor Array (+range), Reinforced Armor (+HP).
+- [x] Module + sensor unit tests pass (`npm test` — 39 tests).
 
-## 9. Known risks & mitigations
+## 10. Known risks & mitigations
 
 - **Realistic physics feels awkward.** Mitigation: autobrake, boost,
   velocity look-ahead camera, and HUD drift readouts teach the model.

@@ -37,6 +37,7 @@ export class Projectiles {
         velocity: { x: 0, z: 0 },
         damage: 0,
         life: 0,
+        scale: 1,
       });
     }
   }
@@ -44,10 +45,10 @@ export class Projectiles {
   /**
    * Fire one bolt from a ship.
    * @param {Ship} ship          Firing ship (position/heading source).
-   * @param {object} opts        { speed, damage, life, color }
+   * @param {object} opts        { speed, damage, life, color, scale }
    * @returns {boolean} false if the pool is exhausted.
    */
-  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff } = {}) {
+  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff, scale = 1 } = {}) {
     const bolt = this.pool.find((b) => !b.active);
     if (!bolt) return false;
 
@@ -61,7 +62,9 @@ export class Projectiles {
     bolt.velocity.z = f.z * speed + ship.velocity.z * 0.5;
     bolt.damage = damage;
     bolt.life = life;
+    bolt.scale = scale;
     bolt.mesh.material.color.setHex(color);
+    bolt.mesh.scale.setScalar(scale);
     bolt.mesh.visible = true;
     bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
     this.active.push(bolt);
@@ -120,6 +123,7 @@ export class Projectiles {
       if (dead) {
         bolt.active = false;
         bolt.mesh.visible = false;
+        bolt.mesh.scale.setScalar(1); // reset for the next pooled reuse
         this.active.splice(i, 1);
         this.pool.push(this.pool.shift()); // rotate pool
       }

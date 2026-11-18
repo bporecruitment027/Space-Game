@@ -15,6 +15,7 @@ import { KeyboardInput } from './input/KeyboardInput.js';
 import { createEnvironment } from './world/Environment.js';
 import { FollowCamera } from './camera/FollowCamera.js';
 import { HUD } from './ui/HUD.js';
+import { LoadoutUI } from './ui/LoadoutUI.js';
 import { Game } from './Game.js';
 
 // --- Renderer (pixel ratio capped per Milestone 6 mobile guidance) ---
@@ -58,12 +59,23 @@ const hud = new HUD();
 
 const game = new Game(scene, { enemyCount: 4, spawnRadius: 42 });
 
+// --- Skirmish loadout screen ---
+const loadoutUI = new LoadoutUI();
+loadoutUI.onDeploy = (loadout) => {
+  game.deploy(loadout);
+  loadoutUI.hide();
+};
+loadoutUI.show(); // start at the loadout screen
+
 // Toast feed for combat events (kills, game over, resets).
 const toastBox = document.getElementById('toasts');
 const toasts = [];
 game.onEvent = (name, data) => {
   if (name === 'kill') toasts.push({ text: `${data.victim} destroyed  +${data.score}`, t: 2.6 });
-  else if (name === 'game-over') toasts.push({ text: `GAME OVER — score ${data.score} (${data.kills} kills)`, t: 4, big: true });
+  else if (name === 'game-over') {
+    toasts.push({ text: `GAME OVER — score ${data.score} (${data.kills} kills)`, t: 4, big: true });
+    loadoutUI.show(); // back to loadout for the next run
+  }
   else if (name === 'player-spawned') toasts.push({ text: 'Spawn complete — watch the asteroids', t: 2 });
   while (toasts.length > 4) toasts.shift();
   renderToasts();

@@ -22,6 +22,8 @@ export class HUD {
     }
     this.compass = document.getElementById('hud-compass');
     this.ctx = this.compass.getContext('2d');
+    this.radar = document.getElementById('hud-radar');
+    this.radarCtx = this.radar.getContext('2d');
     this.#frame = 0;
   }
 
@@ -57,7 +59,66 @@ export class HUD {
       : hull > 0.25 ? '#e0c13a' : '#e04a4a';
 
     this.#drawCompass(ship);
+    this.#drawRadar(ship, g);
     this.#renderEnemies(g.enemies ?? []);
+  }
+
+  #drawRadar(ship, g) {
+    const ctx = this.radarCtx;
+    const S = this.radar.width;
+    const c = S / 2;
+    ctx.clearRect(0, 0, S, S);
+
+    // Range rings: sensor range outer, half-range inner.
+    const range = g.sensorRange ?? 65;
+    const rangePx = S / 2 - 4;
+    const scale = rangePx / range;
+
+    ctx.strokeStyle = 'rgba(120,180,255,0.35)';
+    ctx.lineWidth = 1;
+    for (const frac of [0.5, 1]) {
+      ctx.beginPath();
+      ctx.arc(c, c, rangePx * frac, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    // Crosshair
+    ctx.beginPath();
+    ctx.moveTo(c - 6, c); ctx.lineTo(c + 6, c);
+    ctx.moveTo(c, c - 6); ctx.lineTo(c, c + 6);
+    ctx.stroke();
+
+    // Player marker at centre with heading tick.
+    ctx.fillStyle = '#7fe3ff';
+    ctx.beginPath();
+    ctx.arc(c, c, 3, 0, Math.PI * 2);
+    ctx.fill();
+    const nose = ship.forward;
+    ctx.strokeStyle = '#7fe3ff';
+    ctx.beginPath();
+    ctx.moveTo(c, c);
+    ctx.lineTo(c + nose.x * 8, c - nose.z * 8);
+    ctx.stroke();
+
+    // Contacts: live = solid red, ghost = fading outline.
+    for (const contact of g.radar ?? []) {
+      const dx = (contact.position.x - ship.position.x) * scale;
+      const dz = (contact.position.z - ship.position.z) * scale;
+      if (Math.hypot(dx, dz) > rangePx + 2) continue; // off-radar
+      const x = c + dx;
+      const y = c - dz;
+      if (contact.tracked) {
+        ctx.fillStyle = '#ff3b3b';
+        ctx.beginPath();
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = `rgba(255,107,107,${contact.strength})`;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
   }
 
   #renderEnemies(enemies) {

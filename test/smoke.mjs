@@ -19,6 +19,11 @@ function makeEl() {
     width: 72,
     height: 72,
     addEventListener() {},
+    querySelector: () => makeEl(),
+    querySelectorAll: () => [],
+    closest: () => null,
+    disabled: false,
+    dataset: {},
   };
   return el;
 }
@@ -66,6 +71,9 @@ await import('../src/main.js');
 const { Game } = await import('../src/Game.js');
 const scene = new three.Scene();
 const game = new Game(scene, { enemyCount: 4 });
+// Skirmish state machine: a fresh Game is 'deploying' until deploy()
+// is called — do so so the physics loop actually runs.
+game.deploy({ hull: 'fighter', weapon: 'laser', modules: ['sensor'] });
 
 let fpsSteps = 0;
 for (let i = 0; i < 240; i++) { // 2 simulated seconds

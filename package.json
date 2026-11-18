@@ -4,7 +4,7 @@
   "description": "Browser-first realistic space combat game (Three.js + Newtonian physics)",
   "type": "module",
   "scripts": {
-    "test": "node --test test/physics.test.js test/combat.test.js",
+    "test": "node --test test/physics.test.js test/combat.test.js test/modules.test.js",
     "smoke": "node test/smoke.mjs",
     "start": "python3 -m http.server 8000 --bind 0.0.0.0"
   },

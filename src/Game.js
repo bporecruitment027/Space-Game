@@ -1,12 +1,14 @@
 /**
- * Game — the vertical-slice orchestrator.
+ * Game — the simulation orchestrator.
  *
- * Owns the world state and rules: player ship, enemy flights, asteroid
- * field, and the projectile pool. Each tick it:
+ * Owns the world state and rules: player ship (built from a loadout),
+ * enemy flights, asteroid field, projectile pool, and sensors. Each
+ * tick it:
  *   1. decides enemy commands via EnemyAI,
  *   2. integrates every ship's physics,
  *   3. runs weapon + collision rules (bolts vs ships/asteroids, rams),
- *   4. emits events the UI layer consumes (score, deaths, game over).
+ *   4. scans sensors for fog-of-war contacts,
+ *   5. emits events the UI layer consumes (score, deaths, game over).
  *
  * The class is rendering-agnostic: it touches meshes only to move them
  * (entity sync), which means the rules can be unit-tested headless.
@@ -16,15 +18,12 @@ import { Ship } from './entities/Ship.js';
 import { Projectiles } from './combat/Projectiles.js';
 import { EnemyAI } from './combat/EnemyAI.js';
 import { Asteroids } from './world/Asteroids.js';
-
-const PLAYER_TUNING = {
-  mass: 1200, yawInertia: 1800, maxThrust: 9000, maxTorque: 2600,
-  maxSpeed: null, autobrakeForce: 22000,
-};
+import { Sensors } from './systems/Sensors.js';
+import { deriveStats, defaultLoadout } from './modules/Modules.js';
 
 const ENEMY_TUNING = {
   mass: 950, yawInertia: 2400, maxThrust: 7200, maxTorque: 3000,
-  maxSpeed: null, autobrakeForce: 20000,
+  maxHealth: 60, radius: 2.0,
 };
 
 const BOOST_MULTIPLIER = 2.0;
@@ -34,43 +33,85 @@ const BOOST_RECHARGE = 0.18; // per second while idle
 export class Game {
   /**
    * @param {THREE.Scene} scene
-   * @param {object} [opts] { enemyCount, spawnRadius }
+   * @param {object} [opts] { enemyCount, spawnRadius, playerLoadout }
    */
-  constructor(scene, { enemyCount = 4, spawnRadius = 40 } = {}) {
+  constructor(scene, { enemyCount = 4, spawnRadius = 40, playerLoadout = defaultLoadout() } = {}) {
     this.scene = scene;
     this.enemyCount = enemyCount;
     this.spawnRadius = spawnRadius;
+    this.playerLoadout = playerLoadout;
     this.boostFraction = 1.0; // player boost budget (0..1)
     this._boostHeld = false;
 
+    const stats = deriveStats(playerLoadout);
     this.player = new Ship({
       id: 'player', isPlayer: true,
-      physics: PLAYER_TUNING,
-      meshOptions: { hullColor: 0xb8c4d4, darkColor: 0x2a3342, accentColor: 0xff8c2e },
-      maxHealth: 100, radius: 2.2,
+      physics: stats,
+      meshOptions: {
+        hullColor: stats.colors.hull,
+        darkColor: stats.colors.dark,
+        accentColor: stats.colors.accent,
+      },
+      maxHealth: stats.maxHealth,
+      radius: stats.radius,
+      weapon: stats.fire,
+      sensorRange: stats.sensorRange,
     });
     this.enemies = [];
     this.projectiles = new Projectiles(scene);
     this.asteroids = new Asteroids(scene);
     this.ai = new EnemyAI();
+    this.sensors = new Sensors();
 
     this.score = 0;
     this.kills = 0;
-    this.state = 'running'; // 'running' | 'over'
+    this.state = 'deploying'; // 'deploying' | 'running' | 'over'
     this.onEvent = () => {}; // callback(event) for HUD/toasts
-    this._firedThisFrame = new Set();
 
     this.spawnPlayer();
     this.spawnEnemies();
   }
 
-  /** Reset everything to a fresh run. */
+  /**
+   * Deploy a loadout: rebuild the player ship and start the run.
+   * @param {object} loadout { hull, weapon, modules[] }
+   */
+  deploy(loadout) {
+    const stats = deriveStats(loadout);
+    this.playerLoadout = loadout;
+    const old = this.player;
+    this.player = new Ship({
+      id: 'player', isPlayer: true,
+      physics: stats,
+      meshOptions: {
+        hullColor: stats.colors.hull,
+        darkColor: stats.colors.dark,
+        accentColor: stats.colors.accent,
+      },
+      maxHealth: stats.maxHealth,
+      radius: stats.radius,
+      weapon: stats.fire,
+      sensorRange: stats.sensorRange,
+    });
+    if (old) this.scene.remove(old.mesh);
+    this.scene.add(this.player.mesh);
+    this.sensors.clear();
+    this.spawnPlayer();
+    this.score = 0;
+    this.kills = 0;
+    this.boostFraction = 1.0;
+    this.state = 'running';
+    this.emit('deployed', { loadout });
+  }
+
+  /** Reset everything to a fresh run (keeps the current loadout). */
   reset() {
     this.projectiles.clear();
     this.asteroids.clear();
     this.asteroids = new Asteroids(this.scene);
     this.enemies.forEach((e) => this.scene.remove(e.mesh));
     this.enemies.length = 0;
+    this.sensors.clear();
     this.score = 0;
     this.kills = 0;
     this.state = 'running';
@@ -112,8 +153,6 @@ export class Game {
   step(dt, input) {
     if (this.state !== 'running') return;
 
-    this._firedThisFrame.clear();
-
     // 1. Enemy decisions.
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
@@ -135,7 +174,11 @@ export class Game {
     // 5. Asteroid field.
     this.asteroids.update(dt, this.player);
 
-    // 6. Check deaths.
+    // 6. Sensor scan (fog of war) — player radar reads the results.
+    this.sensors.track(this._allShips());
+    this.sensors.scan(this.player, dt);
+
+    // 7. Check deaths.
     if (this.player.health <= 0 && this.state === 'running') {
       this.state = 'over';
       this.emit('game-over', { score: this.score, kills: this.kills });
@@ -158,13 +201,16 @@ export class Game {
 
     ship.update(dt, { thrust, yaw: cmd.yaw, brake: cmd.brake });
     if (cmd.fire && ship.fireCooldown <= 0 && ship.alive) {
+      // Weapon stats come from the ship's loadout (laser/railgun).
+      const w = ship.weapon;
       const ok = this.projectiles.fire(ship, {
-        speed: ship.isPlayer ? 150 : 130,
-        damage: ship.isPlayer ? 14 : 8,
-        life: 2.2,
-        color: ship.isPlayer ? 0x7fe3ff : 0xff6b4a,
+        speed: w.speed,
+        damage: w.damage,
+        life: w.life,
+        color: ship.isPlayer ? w.color : 0xff6b4a,
+        scale: w.scale,
       });
-      if (ok) ship.fireCooldown = ship.isPlayer ? 0.16 : this.ai.fireInterval;
+      if (ok) ship.fireCooldown = w.cooldown;
     }
   }
 
@@ -258,6 +304,9 @@ export class Game {
       playerMaxHealth: this.player.maxHealth,
       boostFraction: this.boostFraction,
       state: this.state,
+      loadout: this.playerLoadout,
+      radar: this.sensors.getRadarContacts(this.player),
+      sensorRange: this.player.sensorRange,
     };
   }
 }

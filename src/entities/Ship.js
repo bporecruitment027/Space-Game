@@ -10,6 +10,7 @@
 
 import { ShipPhysics } from '../physics/ShipPhysics.js';
 import { createShip } from '../ship/ShipFactory.js';
+import { WEAPON_DEFS, BASE_SENSOR_RANGE } from '../modules/Modules.js';
 
 export class Ship {
   /**
@@ -20,8 +21,10 @@ export class Ship {
    * @param {object} [opts.meshOptions] ShipFactory colour options.
    * @param {number} [opts.maxHealth]
    * @param {number} [opts.radius]      Collision radius in metres.
+   * @param {object} [opts.weapon]      Weapon fire params (from WEAPON_DEFS).
+   * @param {number} [opts.sensorRange] Sensor detection radius in metres.
    */
-  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2 }) {
+  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2, weapon, sensorRange }) {
     this.id = id;
     this.isPlayer = isPlayer;
     this.physics = new ShipPhysics(physics);
@@ -38,6 +41,10 @@ export class Ship {
     this.invulnerableTime = 0; // spawn protection / respawn grace
     this.fireCooldown = 0;
     this.ramCooldown = 0; // asteroid-impact damage cooldown
+
+    // Weapon + sensor stats come from the ship's loadout (Milestone 3).
+    this.weapon = weapon ?? WEAPON_DEFS.laser;
+    this.sensorRange = sensorRange ?? BASE_SENSOR_RANGE;
   }
 
   get position() { return this.physics.position; }

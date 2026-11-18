@@ -16,10 +16,11 @@ import { Projectiles } from '../src/combat/Projectiles.js';
 import { Asteroids } from '../src/world/Asteroids.js';
 import { Ship } from '../src/entities/Ship.js';
 
-/** Build a Game on a throwaway scene and return it with helpers. */
+/** Build a Game on a throwaway scene, deploy it, and return it. */
 function makeGame(enemyCount = 2) {
   const scene = new THREE.Scene();
   const game = new Game(scene, { enemyCount, spawnRadius: 42 });
+  game.deploy({ hull: 'fighter', weapon: 'laser', modules: [] });
   return { scene, game };
 }
 
