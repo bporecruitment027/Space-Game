@@ -1,12 +1,12 @@
 # Space Combat — Game Design Document
 
-**Status:** Milestone 1 (Concept & Pre-Production) — proof-of-concept delivered.
+**Status:** Milestone 2 (Vertical Slice) — combat prototype delivered.
 **Last updated:** 2026-11-18
 
 This document is the living design spec for the roadmap. Each milestone
-below maps to the development roadmap; only Milestone 1 is implemented
-in this branch. Later milestones extend it without changing the core
-flight model.
+below maps to the development roadmap; Milestones 1 and 2 are
+implemented in this branch. Later milestones extend it without changing
+the core flight model.
 
 ---
 
@@ -31,22 +31,23 @@ on desktop, ~30 fps on mobile.
 4. **Performance budget first.** Instancing, object pooling, capped
    pixel ratio, compressed assets — designed in from Milestone 1.
 
-## 3. Controls (Milestone 1)
+## 3. Controls
 
 | Input | Action |
 |---|---|
 | `W` / `↑` | Main thruster (forward) |
 | `S` / `↓` | Retro thruster (reverse) |
 | `A` `D` / `←` `→` | Yaw left/right (RCS torque) |
+| `J` | Fire laser cannon |
 | `X` / `Space` | Autobrake (counter-thrust to a stop) |
 | `Shift` | Boost (2× thrust, limited charge) |
-| `R` | Reset to spawn |
+| `R` | Reset the run (respawn player, clear score) |
 | `C` | Toggle overhead / chase camera |
 | `P` / `Esc` | Pause |
 
 Touch controls and gamepad support are deferred to Milestone 6.
 
-## 4. Flight model & tuning (Milestone 1)
+## 4. Flight model & tuning
 
 The ship is a rigid body with mass `m` and yaw moment of inertia `I`:
 
@@ -56,21 +57,57 @@ The ship is a rigid body with mass `m` and yaw moment of inertia `I`:
 - Autobrake applies `maxThrust` opposing the velocity vector and clamps
   at zero speed (never reverses).
 
-**Fighter-class placeholder stats** (`src/main.js`):
+**Fighter-class placeholder stats** (`src/Game.js`):
 
-| Stat | Value | Derived |
+| Stat | Player | Enemy |
 |---|---|---|
-| Mass | 1,200 kg | — |
-| Max thrust | 9,000 N | 7.5 m/s² acceleration |
-| Yaw inertia | 1,800 kg·m² | — |
-| Max yaw torque | 2,600 N·m | 1.44 rad/s² yaw accel. |
-| Boost | 2× thrust | drains 35%/s, recharges 18%/s |
+| Mass | 1,200 kg | 950 kg |
+| Max thrust | 9,000 N (7.5 m/s²) | 7,200 N (7.6 m/s²) |
+| Yaw inertia | 1,800 kg·m² | 2,400 kg·m² (turns slower) |
+| Max yaw torque | 2,600 N·m | 3,000 N·m |
+| Hull | 100 HP | 60 HP |
+| Boost | 2× thrust | — |
+
+Boost drains 35%/s and recharges 18%/s.
 
 Simulation runs at a fixed 120 Hz timestep, decoupled from rendering,
 so motion is identical at 60 Hz and 144 Hz displays — and identical on
 a future authoritative server (Milestone 4).
 
-## 5. Technology decisions (Milestone 1)
+## 5. Combat systems (Milestone 2)
+
+**Entities.** `Ship` (shared by player and enemies) pairs `ShipPhysics`
+with a health pool, spawn protection, and damage flashing. Enemy ships
+use the same physics with slightly different tuning so the player can
+tell friend and foe apart by feel.
+
+**Weapons.** Lasers fire straight-line bolts (no leading, no drag —
+ballistic in the Newtonian sense). Bolts inherit ~50% of the ship's
+velocity, are pooled (160 instances, no per-shot allocation), and
+expire after ~2.2 s. A bolt never hits its own ship.
+
+**Asteroids.** The field drifts ballistically and tumbles. Bolts chip
+them (mass-proportional HP); a rock past its damage threshold
+fragments into two smaller chunks flying apart, down to a minimum
+radius. Ramming an asteroid deals closing-speed-scaled damage to the
+ship and pushes both apart. The field trickles respawns so the arena
+keeps cover without a level file.
+
+**Enemy AI.** Simple steering state machine (behaviour trees arrive in
+M3): close distance when far, hold range and yaw to aim when in
+weapon range, fire only when aligned, flee at low health, and steer
+around asteroids between ship and target. The AI's yaw rate is capped
+so a skilled player can out-turn it.
+
+**Ramming.** Ships ramming each other trade damage scaled by closing
+speed. Enemy kills award 100 points and respawn after a short delay.
+
+**Game loop.** `Game.step(dt, playerInput)` is the single simulation
+entry point: AI decisions → ship updates → bolt/collision rules →
+death checks. It is rendering-agnostic, so the same step runs in tests
+and, in Milestone 4, on the authoritative server.
+
+## 6. Technology decisions
 
 | Concern | Choice | Rationale |
 |---|---|---|
@@ -80,13 +117,14 @@ a future authoritative server (Milestone 4).
 | Networking | Deferred (Milestone 4) | Physics module is already render-independent so it can run server-side unchanged. |
 | Packaging | Deferred (Milestone 6) | PWA manifest + service worker; pixel ratio already capped at 1.5. |
 
-## 6. Milestone plan (from the roadmap)
+## 7. Milestone plan (from the roadmap)
 
-- **M1 — Concept & Pre-Production (this branch):** design spec + runnable
+- **M1 — Concept & Pre-Production:** design spec + runnable
   demo: one ship under Newtonian physics, overhead follow camera,
   keyboard thrust/rotation. ✅
-- **M2 — Vertical Slice:** enemy ship with AI, projectiles, asteroid
-  collisions + fragmentation, health bars, one playable arena.
+- **M2 — Vertical Slice (this branch):** enemy ship with AI,
+  projectiles, asteroid collisions + fragmentation, health bars, one
+  playable arena. ✅
 - **M3 — Core Mechanics & MVP:** ship customization (hull + weapon
   modules), sensor/fog-of-war contacts, full UI overlays, skirmish mode.
 - **M4 — Multiplayer:** authoritative Node.js server (Socket.IO/ws),
@@ -98,7 +136,22 @@ a future authoritative server (Milestone 4).
 - **M7 — Release & Post-Release:** Playwright tests, Sentry telemetry,
   store submission, live-ops patches.
 
-## 7. Acceptance criteria — Milestone 1
+## 8. Acceptance criteria
+
+**Milestone 1**
+- [x] Written design spec (this document).
+- [x] Runnable browser demo: one ship with mass/inertia physics —
+      thrust causes realistic drift, rotation via torque.
+- [x] Overhead camera follows the ship; keyboard thrust + rotation work.
+- [x] Physics unit tests pass (`npm test`).
+
+**Milestone 2**
+- [x] Enemy ship with AI (close, hold, aim, fire, flee, avoid).
+- [x] Projectiles: pooled laser bolts, damage, owner-safe collisions.
+- [x] Asteroid field: drift, chip damage, fragmentation, ram damage.
+- [x] Health bars for player and enemies; score and kill counter.
+- [x] One playable arena; reset and game-over flows work.
+- [x] Combat unit tests pass (`npm test` — 22 tests).
 
 - [x] Written design spec (this document).
 - [x] Runnable browser demo: one ship with mass/inertia physics —
@@ -106,7 +159,7 @@ a future authoritative server (Milestone 4).
 - [x] Overhead camera follows the ship; keyboard thrust + rotation work.
 - [x] Physics unit tests pass (`npm test`).
 
-## 8. Known risks & mitigations
+## 9. Known risks & mitigations
 
 - **Realistic physics feels awkward.** Mitigation: autobrake, boost,
   velocity look-ahead camera, and HUD drift readouts teach the model.

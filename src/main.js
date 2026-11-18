@@ -1,22 +1,21 @@
 /**
- * main.js — Milestone 1 bootstrap: one ship, Newtonian physics, overhead
- * follow camera. See docs/GDD.md for the full design spec.
+ * main.js — bootstrap: Newtonian space combat vertical slice.
+ * See docs/GDD.md for the full design spec.
  *
  * Game loop notes:
  *   - Fixed-timestep physics (120 Hz) decoupled from rendering, so the
  *     simulation is deterministic regardless of display refresh rate.
  *     This is the same pattern Milestone 4's authoritative server needs.
- *   - Boost is a limited resource (drains while held, recharges when
- *     idle) so it can't be a permanent speed hack.
+ *   - The Game class owns all rules (ships, AI, weapons, collisions);
+ *     this file only wires rendering, input, and UI to it.
  */
 
 import * as THREE from 'three';
-import { ShipPhysics } from './physics/ShipPhysics.js';
 import { KeyboardInput } from './input/KeyboardInput.js';
-import { createShip } from './ship/ShipFactory.js';
 import { createEnvironment } from './world/Environment.js';
 import { FollowCamera } from './camera/FollowCamera.js';
 import { HUD } from './ui/HUD.js';
+import { Game } from './Game.js';
 
 // --- Renderer (pixel ratio capped per Milestone 6 mobile guidance) ---
 const canvas = document.getElementById('game');
@@ -50,29 +49,37 @@ const rim = new THREE.DirectionalLight(0x4488ff, 0.6);
 rim.position.set(-100, 40, -120);
 scene.add(rim);
 
-// --- World + ship ---
-const environment = createEnvironment(scene);
+// --- World + game ---
+createEnvironment(scene);
 
-// Fighter-class placeholder stats (see GDD §4 for the tuning table).
-const ship = new ShipPhysics({
-  mass: 1200,          // kg
-  yawInertia: 1800,    // kg·m²
-  maxThrust: 9000,     // N  → 7.5 m/s² acceleration
-  maxTorque: 2600,     // N·m → ~1.44 rad/s² yaw acceleration
-});
-const { group: shipMesh, setThrustVisuals } = createShip();
-scene.add(shipMesh);
-
-// Sun shadow camera follows the ship so shadows stay crisp everywhere.
-const followCam = new FollowCamera(camera);
 const input = new KeyboardInput();
+const followCam = new FollowCamera(camera);
 const hud = new HUD();
 
+const game = new Game(scene, { enemyCount: 4, spawnRadius: 42 });
+
+// Toast feed for combat events (kills, game over, resets).
+const toastBox = document.getElementById('toasts');
+const toasts = [];
+game.onEvent = (name, data) => {
+  if (name === 'kill') toasts.push({ text: `${data.victim} destroyed  +${data.score}`, t: 2.6 });
+  else if (name === 'game-over') toasts.push({ text: `GAME OVER — score ${data.score} (${data.kills} kills)`, t: 4, big: true });
+  else if (name === 'player-spawned') toasts.push({ text: 'Spawn complete — watch the asteroids', t: 2 });
+  while (toasts.length > 4) toasts.shift();
+  renderToasts();
+};
+
+function renderToasts() {
+  toastBox.innerHTML = '';
+  for (const t of toasts) {
+    const el = document.createElement('div');
+    el.className = 'toast' + (t.big ? ' toast-big' : '');
+    el.textContent = t.text;
+    toastBox.appendChild(el);
+  }
+}
+
 let paused = false;
-let boostFraction = 1.0; // 0..1
-const BOOST_DRAIN = 0.35; // per second while boosting
-const BOOST_RECHARGE = 0.18; // per second while not boosting
-const BOOST_MULTIPLIER = 2.0;
 
 // --- Fixed-timestep loop (120 Hz physics, render every rAF) ---
 const STEP = 1 / 120;
@@ -83,19 +90,7 @@ let fpsTime = 0;
 let fps = 60;
 
 function stepPhysics(dt) {
-  const cmd = input.getCommand();
-
-  // Boost only applies to forward thrust and only while budget remains.
-  let thrust = cmd.thrust;
-  const boosting = cmd.boost && cmd.thrust > 0 && boostFraction > 0.01;
-  if (boosting) {
-    thrust *= BOOST_MULTIPLIER;
-    boostFraction = Math.max(0, boostFraction - BOOST_DRAIN * dt);
-  } else {
-    boostFraction = Math.min(1, boostFraction + BOOST_RECHARGE * dt);
-  }
-
-  ship.update(dt, { thrust, yaw: cmd.yaw, brake: cmd.brake });
+  game.step(dt, input.getCommand());
 }
 
 function frame(now) {
@@ -113,9 +108,16 @@ function frame(now) {
     fpsTime = 0;
   }
 
+  // Toasts age out.
+  for (let i = toasts.length - 1; i >= 0; i--) {
+    toasts[i].t -= dt;
+    if (toasts[i].t <= 0) toasts.splice(i, 1);
+  }
+  if (toasts.length > 0) renderToasts();
+
   // Edge-triggered actions
   for (const ev of input.drainEvents()) {
-    if (ev === 'reset') ship.reset();
+    if (ev === 'reset') game.reset();
     if (ev === 'camera') followCam.toggleMode();
     if (ev === 'pause') {
       paused = !paused;
@@ -129,24 +131,22 @@ function frame(now) {
       stepPhysics(STEP);
       accumulator -= STEP;
     }
-    environment.update(dt);
   }
 
-  // Sync mesh to physics state (y = 0 flight plane).
-  shipMesh.position.set(ship.position.x, 0, ship.position.z);
-  shipMesh.rotation.y = ship.heading;
-  // Bank into turns for feel (visual only — physics stays yaw-only).
-  shipMesh.rotation.z = -ship.yawLevel * 0.35;
-  shipMesh.rotation.x = ship.thrustLevel * 0.04;
-  setThrustVisuals(ship.thrustLevel, ship.yawLevel);
-
-  // Keep sun + shadow frustum centred on the ship.
-  sun.position.set(ship.position.x + 120, 180, ship.position.z + 60);
-  sun.target.position.set(ship.position.x, 0, ship.position.z);
+  // Sun shadow frustum follows the player so shadows stay crisp.
+  sun.position.set(game.player.position.x + 120, 180, game.player.position.z + 60);
+  sun.target.position.set(game.player.position.x, 0, game.player.position.z);
   sun.target.updateMatrixWorld();
 
-  followCam.update(shipMesh.position, ship.velocity, ship.heading, dt);
-  hud.update(ship, { fps, cameraMode: followCam.mode, boostFraction });
+  followCam.update(
+    game.player.mesh.position, game.player.velocity, game.player.heading, dt,
+  );
+  hud.update(game.player, {
+    fps,
+    cameraMode: followCam.mode,
+    boostFraction: game.boostFraction,
+    game: game.hudState(),
+  });
 
   renderer.render(scene, camera);
 }

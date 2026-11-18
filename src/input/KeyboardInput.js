@@ -1,19 +1,21 @@
 /**
  * KeyboardInput — maps physical keys to game commands.
  *
- * Keys (Milestone 1):
+ * Keys (Milestone 1 + 2):
  *   W / ↑        main thruster (forward)
  *   S / ↓        retro thruster (reverse)
  *   A / D / ←/→  yaw left / right (RCS torque)
  *   X / Space    autobrake (counter-thrust until stopped)
  *   Shift        boost (2× thrust — burns "boost" budget, see HUD)
+ *   J            fire laser cannon
  *   R            reset ship to spawn
  *   C            toggle overhead / chase camera
  *   P / Esc      pause
  *
  * Edge-triggered actions (reset, camera, pause) are exposed as a queue
  * of events the game loop drains each frame, so input handling stays
- * decoupled from game logic.
+ * decoupled from game logic. Fire is edge-triggered for the player's
+ * fire-rate limit; the continuous command carries the current state.
  */
 
 export class KeyboardInput {
@@ -62,6 +64,7 @@ export class KeyboardInput {
       yaw,
       brake: k.has('KeyX') || k.has('Space'),
       boost: k.has('ShiftLeft') || k.has('ShiftRight'),
+      fire: k.has('KeyJ'),
     };
   }
 

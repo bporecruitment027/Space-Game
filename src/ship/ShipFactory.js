@@ -12,18 +12,18 @@
 
 import * as THREE from 'three';
 
-export function createShip() {
+export function createShip(options = {}) {
   const group = new THREE.Group();
 
   const hullMat = new THREE.MeshStandardMaterial({
-    color: 0xb8c4d4, metalness: 0.85, roughness: 0.35,
+    color: options.hullColor ?? 0xb8c4d4, metalness: 0.85, roughness: 0.35,
   });
   const darkMat = new THREE.MeshStandardMaterial({
-    color: 0x2a3342, metalness: 0.7, roughness: 0.5,
+    color: options.darkColor ?? 0x2a3342, metalness: 0.7, roughness: 0.5,
   });
   const accentMat = new THREE.MeshStandardMaterial({
-    color: 0xff8c2e, metalness: 0.4, roughness: 0.4,
-    emissive: 0x552200, emissiveIntensity: 0.6,
+    color: options.accentColor ?? 0xff8c2e, metalness: 0.4, roughness: 0.4,
+    emissive: options.accentColor ?? 0xff8c2e, emissiveIntensity: 0.25,
   });
   const glassMat = new THREE.MeshStandardMaterial({
     color: 0x66ccff, metalness: 0.1, roughness: 0.1,
@@ -118,5 +118,31 @@ export function createShip() {
     rcs.position.x = -yawLevel * 0.5; // puff on the side opposite the turn
   }
 
-  return { group, setThrustVisuals };
+  // Collect emissive-capable materials for damage flashes.
+  const flashMats = [];
+  group.traverse((o) => {
+    if (o.isMesh && o.material && o.material.emissive) flashMats.push(o.material);
+  });
+  let flashTime = 0;
+
+  /** Brief red emissive flash when the ship takes a hit. */
+  function flashDamage() {
+    flashTime = 0.12;
+    for (const m of flashMats) m.emissive.setHex(0xff2222);
+  }
+
+  /** Call every frame; decays the damage flash back to normal. */
+  function updateFlash(dt) {
+    if (flashTime > 0) {
+      flashTime -= dt;
+      if (flashTime <= 0) {
+        for (const m of flashMats) {
+          m.emissive.setHex(m === accentMat ? (options.accentColor ?? 0xff8c2e) : 0x000000);
+          m.emissiveIntensity = m === accentMat ? 0.25 : 1;
+        }
+      }
+    }
+  }
+
+  return { group, setThrustVisuals, flashDamage, updateFlash };
 }

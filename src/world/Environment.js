@@ -1,11 +1,12 @@
 /**
- * Environment — starfield, reference grid, and placeholder asteroids.
+ * Environment — starfield and reference grid.
  *
- * The grid + asteroids exist for one reason: in empty space with no drag,
- * drift is invisible. Fixed reference objects let the player *see* that
- * the ship keeps moving after thrust is cut — the core Newtonian lesson
- * of Milestone 1. Asteroids are static placeholders here; Milestone 2
- * gives them physics bodies and fragmentation.
+ * The grid exists for one reason: in empty space with no drag, drift is
+ * invisible. Fixed reference objects let the player *see* that the ship
+ * keeps moving after thrust is cut — the core Newtonian lesson of the
+ * prototype. Asteroids moved out of here in Milestone 2: they are now
+ * dynamic entities owned by the Game (src/world/Asteroids.js), with
+ * fragmentation and respawns.
  */
 
 import * as THREE from 'three';
@@ -47,49 +48,13 @@ export function createEnvironment(scene) {
   grid.material.opacity = 0.55;
   scene.add(grid);
 
-  // --- Placeholder asteroids (static, far from spawn) ---
-  const asteroids = [];
-  const rockMat = new THREE.MeshStandardMaterial({
-    color: 0x8a7f72, metalness: 0.1, roughness: 0.95, flatShading: true,
-  });
-  const asteroidSpots = [
-    { x: 60, z: -80, s: 9 }, { x: -90, z: -40, s: 14 },
-    { x: 40, z: 110, s: 7 }, { x: -50, z: 90, s: 11 },
-    { x: 130, z: 40, s: 18 }, { x: -140, z: -110, s: 12 },
-  ];
-  for (const spot of asteroidSpots) {
-    const geo = new THREE.IcosahedronGeometry(spot.s, 1);
-    // Displace vertices for a rocky silhouette.
-    const pos = geo.attributes.position;
-    const v = new THREE.Vector3();
-    for (let i = 0; i < pos.count; i++) {
-      v.fromBufferAttribute(pos, i);
-      const n = 0.75 + Math.random() * 0.5;
-      v.multiplyScalar(n);
-      pos.setXYZ(i, v.x, v.y, v.z);
-    }
-    geo.computeVertexNormals();
-    const rock = new THREE.Mesh(geo, rockMat);
-    rock.position.set(spot.x, 0, spot.z);
-    rock.rotation.set(Math.random() * 3, Math.random() * 3, Math.random() * 3);
-    rock.castShadow = true;
-    rock.receiveShadow = true;
-    scene.add(rock);
-    asteroids.push({
-      mesh: rock,
-      spin: new THREE.Vector3(
-        (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1, (Math.random() - 0.5) * 0.1,
-      ),
-    });
-  }
-
-  /** Slowly tumble the placeholder asteroids. */
+  /**
+   * Update environment animations. Starfield and grid are static; the
+   * call exists so main.js has a stable hook as the world grows.
+   */
   function update(dt) {
-    for (const a of asteroids) {
-      a.mesh.rotation.x += a.spin.x * dt;
-      a.mesh.rotation.y += a.spin.y * dt;
-      a.mesh.rotation.z += a.spin.z * dt;
-    }
+    // Reserved for future animated background layers.
+    void dt;
   }
 
   return { update };
