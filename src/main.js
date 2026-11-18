@@ -8,6 +8,12 @@
  *     This is the same pattern Milestone 4's authoritative server needs.
  *   - The Game class owns all rules (ships, AI, weapons, collisions);
  *     this file only wires rendering, input, and UI to it.
+ *
+ * Milestone 4 — two modes:
+ *   - 'local':  the local Game simulates everything (solo skirmish).
+ *   - 'network': the authoritative GameServer owns all state; this
+ *     client sends input commands and renders the broadcast snapshots
+ *     via NetworkClient. No local physics is run in this mode.
  */
 
 import * as THREE from 'three';
@@ -16,7 +22,10 @@ import { createEnvironment } from './world/Environment.js';
 import { FollowCamera } from './camera/FollowCamera.js';
 import { HUD } from './ui/HUD.js';
 import { LoadoutUI } from './ui/LoadoutUI.js';
+import { MultiplayerUI } from './ui/MultiplayerUI.js';
+import { NetworkClient } from './net/NetworkClient.js';
 import { Game } from './Game.js';
+import { deriveStats } from './modules/Modules.js';
 
 // --- Renderer (pixel ratio capped per Milestone 6 mobile guidance) ---
 const canvas = document.getElementById('game');
@@ -67,7 +76,62 @@ loadoutUI.onDeploy = (loadout) => {
 };
 loadoutUI.show(); // start at the loadout screen
 
-// Toast feed for combat events (kills, game over, resets).
+// --- Multiplayer (Milestone 4) ---
+const netUI = new MultiplayerUI();
+let mode = 'local'; // 'local' | 'network'
+let net = null;
+let netBoost = 1.0; // network-mode boost bar (mirrors server-side drain)
+let netAsteroids = new Map(); // key "x,z" → mesh, from server snapshots
+
+netUI.onJoin = (url) => {
+  // Tear the local sim out of the scene so only server-owned meshes render.
+  for (const p of game.players) if (p.mesh) scene.remove(p.mesh);
+  for (const e of game.enemies) if (e.mesh) scene.remove(e.mesh);
+  if (game.asteroids) game.asteroids.clear();
+
+  const loadout = { ...loadoutUI.state, modules: [...loadoutUI.state.modules] };
+  net = new NetworkClient(scene, { url, name: 'pilot', loadout });
+  net.onConnect = (welcome) => {
+    if (welcome) {
+      netUI.hide();
+      netUI.setStatus(`connected — ${welcome.shipId}`);
+    } else {
+      netUI.setStatus('connecting…');
+    }
+  };
+  net.onDisconnect = () => {
+    if (mode !== 'network') return;
+    mode = 'local';
+    netUI.hide();
+    netUI.setStatus('');
+    netUI.panel.classList.add('hidden');
+    netUI.renderLeaderboard([]);
+    netAsteroids.forEach((m) => scene.remove(m));
+    netAsteroids.clear();
+    game.reset(); // restore solo play
+    loadoutUI.show();
+  };
+  net.onEvent = (event) => {
+    if (event.name === 'kill') {
+      toasts.push({ text: `${event.data.victim} destroyed  +${event.data.score}`, t: 2.6 });
+      renderToasts();
+    }
+  };
+  net.onSnapshot = (snap) => {
+    mode = 'network';
+    netUI.panel.classList.remove('hidden');
+    netUI.renderLeaderboard(snap.ships);
+    renderNetAsteroids(snap.asteroids ?? []);
+  };
+  net.connect();
+};
+
+// Entry point: the MULTIPLAYER button on the controls panel.
+document.getElementById('btn-multiplayer').addEventListener('click', () => {
+  netUI.show();
+});
+
+// --- Toast feed for combat events (kills, game over, resets) ---
 const toastBox = document.getElementById('toasts');
 const toasts = [];
 game.onEvent = (name, data) => {
@@ -101,8 +165,98 @@ let fpsFrames = 0;
 let fpsTime = 0;
 let fps = 60;
 
+/** Network-mode boost bar: mirror the server's drain/recharge rates. */
+function stepNetBoost(dt, command) {
+  if (command && command.boost && netBoost > 0) netBoost = Math.max(0, netBoost - 0.35 * dt);
+  else netBoost = Math.min(1, netBoost + 0.18 * dt);
+}
+
+/** Build the HUD game-state object from a server snapshot. */
+function hudStateFromSnapshot(snap, localShip) {
+  if (!localShip) return {};
+  const players = snap.ships.filter((s) => s.id !== localShip.id);
+  return {
+    score: localShip.score,
+    kills: localShip.kills,
+    playerHealth: localShip.health,
+    playerMaxHealth: localShip.maxHealth,
+    sensorRange: deriveStats(loadoutUI.state).sensorRange,
+    enemies: players.map((s) => ({
+      id: s.id,
+      fraction: s.maxHealth ? s.health / s.maxHealth : 0,
+      distance: Math.hypot(s.x - localShip.x, s.z - localShip.z),
+    })),
+    radar: snap.ships
+      .filter((s) => s.id !== localShip.id)
+      .map((s) => {
+        const dist = Math.hypot(s.x - localShip.x, s.z - localShip.z);
+        return {
+          position: { x: s.x, z: s.z },
+          tracked: true,
+          strength: Math.max(0, Math.min(1, 1 - dist / 120)),
+        };
+      }),
+    state: snap.state,
+  };
+}
+
+/** Pseudo-ship for the HUD, assembled from the snapshot + input. */
+function netPseudoShip(localShip, command) {
+  if (!localShip) return game.player;
+  const speed = Math.hypot(localShip.vx, localShip.vz);
+  const forward = { x: Math.sin(localShip.heading), z: Math.cos(localShip.heading) };
+  // Drift angle: angle between heading and velocity vector.
+  const velAngle = Math.atan2(localShip.vx, localShip.vz);
+  let drift = velAngle - localShip.heading;
+  while (drift > Math.PI) drift -= Math.PI * 2;
+  while (drift < -Math.PI) drift += Math.PI * 2;
+  return {
+    position: { x: localShip.x, z: localShip.z },
+    heading: localShip.heading,
+    forward,
+    speed,
+    thrustLevel: command ? command.thrust : 0,
+    driftAngleDeg: (drift * 180) / Math.PI,
+    kineticEnergy: 0.5 * 1200 * speed * speed,
+    health: localShip.health,
+    maxHealth: localShip.maxHealth,
+  };
+}
+
+/** Render authoritative asteroids from a snapshot (create/update/remove). */
+function renderNetAsteroids(asteroids) {
+  const seen = new Set();
+  for (const a of asteroids) {
+    const key = `${a.x.toFixed(0)},${a.z.toFixed(0)}`;
+    seen.add(key);
+    let mesh = netAsteroids.get(key);
+    if (!mesh) {
+      mesh = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(a.radius, 0),
+        new THREE.MeshStandardMaterial({ color: 0x8a7f72, flatShading: true, roughness: 0.95, metalness: 0.05 }),
+      );
+      scene.add(mesh);
+      netAsteroids.set(key, mesh);
+    }
+    mesh.position.set(a.x, 0, a.z);
+    mesh.rotation.y += 0.002;
+  }
+  for (const [key, mesh] of netAsteroids) {
+    if (!seen.has(key)) {
+      scene.remove(mesh);
+      netAsteroids.delete(key);
+    }
+  }
+}
+
 function stepPhysics(dt) {
-  game.step(dt, input.getCommand());
+  const command = input.getCommand();
+  if (mode === 'network') {
+    stepNetBoost(dt, command);
+    net.sendInput(command);
+  } else {
+    game.step(dt, command);
+  }
 }
 
 function frame(now) {
@@ -129,7 +283,7 @@ function frame(now) {
 
   // Edge-triggered actions
   for (const ev of input.drainEvents()) {
-    if (ev === 'reset') game.reset();
+    if (ev === 'reset' && mode === 'local') game.reset();
     if (ev === 'camera') followCam.toggleMode();
     if (ev === 'pause') {
       paused = !paused;
@@ -145,19 +299,41 @@ function frame(now) {
     }
   }
 
-  // Sun shadow frustum follows the player so shadows stay crisp.
-  sun.position.set(game.player.position.x + 120, 180, game.player.position.z + 60);
-  sun.target.position.set(game.player.position.x, 0, game.player.position.z);
+  // Resolve the camera target + HUD source for the active mode.
+  let camPos, camVel, camHeading, hudShip, hudGame, boostFraction;
+  if (mode === 'network' && net && net.shipId) {
+    const entry = net.remoteShips.get(net.shipId);
+    const localSnap = net.lastSnapshot?.ships.find((s) => s.id === net.shipId);
+    if (entry && localSnap) {
+      camPos = entry.mesh.position;
+      camVel = entry.ship.velocity;
+      camHeading = localSnap.heading;
+      hudShip = netPseudoShip(localSnap, input.getCommand());
+      hudGame = hudStateFromSnapshot(net.lastSnapshot, localSnap);
+    }
+    boostFraction = netBoost;
+  }
+  if (!camPos) {
+    // Local mode (or network before the first snapshot).
+    camPos = game.player.mesh.position;
+    camVel = game.player.velocity;
+    camHeading = game.player.heading;
+    hudShip = game.player;
+    hudGame = game.hudState();
+    boostFraction = game.boostFraction;
+  }
+
+  // Sun shadow frustum follows the camera target so shadows stay crisp.
+  sun.position.set(camPos.x + 120, 180, camPos.z + 60);
+  sun.target.position.set(camPos.x, 0, camPos.z);
   sun.target.updateMatrixWorld();
 
-  followCam.update(
-    game.player.mesh.position, game.player.velocity, game.player.heading, dt,
-  );
-  hud.update(game.player, {
+  followCam.update(camPos, camVel, camHeading, dt);
+  hud.update(hudShip, {
     fps,
     cameraMode: followCam.mode,
-    boostFraction: game.boostFraction,
-    game: game.hudState(),
+    boostFraction,
+    game: hudGame,
   });
 
   renderer.render(scene, camera);

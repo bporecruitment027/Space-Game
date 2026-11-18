@@ -23,16 +23,25 @@ export class Ship {
    * @param {number} [opts.radius]      Collision radius in metres.
    * @param {object} [opts.weapon]      Weapon fire params (from WEAPON_DEFS).
    * @param {number} [opts.sensorRange] Sensor detection radius in metres.
+   * @param {boolean} [opts.headless]   If true, skip mesh creation (server).
    */
-  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2, weapon, sensorRange }) {
+  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2, weapon, sensorRange, headless = false }) {
     this.id = id;
     this.isPlayer = isPlayer;
     this.physics = new ShipPhysics(physics);
-    const built = createShip(meshOptions);
-    this.mesh = built.group;
-    this.setThrustVisuals = built.setThrustVisuals;
-    this.flashDamage = built.flashDamage;
-    this.updateFlash = built.updateFlash;
+    if (headless) {
+      // Server mode: no rendering. Visual methods become no-ops.
+      this.mesh = null;
+      this.setThrustVisuals = () => {};
+      this.flashDamage = () => {};
+      this.updateFlash = () => {};
+    } else {
+      const built = createShip(meshOptions);
+      this.mesh = built.group;
+      this.setThrustVisuals = built.setThrustVisuals;
+      this.flashDamage = built.flashDamage;
+      this.updateFlash = built.updateFlash;
+    }
 
     this.maxHealth = maxHealth;
     this.health = maxHealth;
@@ -41,6 +50,8 @@ export class Ship {
     this.invulnerableTime = 0; // spawn protection / respawn grace
     this.fireCooldown = 0;
     this.ramCooldown = 0; // asteroid-impact damage cooldown
+    this.score = 0; // kills credited to this ship (0 for AI)
+    this.kills = 0;
 
     // Weapon + sensor stats come from the ship's loadout (Milestone 3).
     this.weapon = weapon ?? WEAPON_DEFS.laser;
@@ -60,7 +71,7 @@ export class Ship {
     this.invulnerableTime = invulnerableSeconds;
     this.fireCooldown = 0;
     this.ramCooldown = 0;
-    this.mesh.visible = true;
+    if (this.mesh) this.mesh.visible = true;
     this.syncMesh(0);
   }
 
@@ -72,7 +83,7 @@ export class Ship {
     if (this.health <= 0) {
       this.health = 0;
       this.alive = false;
-      this.mesh.visible = false;
+      if (this.mesh) this.mesh.visible = false;
       return true;
     }
     return false;
@@ -87,10 +98,11 @@ export class Ship {
     this.physics.update(dt, input);
     this.syncMesh(dt);
     // Blink while invulnerable so the player can see the grace period.
-    this.mesh.visible = this.invulnerableTime <= 0 || Math.floor(this.invulnerableTime * 8) % 2 === 0;
+    if (this.mesh) this.mesh.visible = this.invulnerableTime <= 0 || Math.floor(this.invulnerableTime * 8) % 2 === 0;
   }
 
   syncMesh(dt) {
+    if (!this.mesh) return; // headless (server) — no rendering
     this.mesh.position.set(this.position.x, 0, this.position.z);
     this.mesh.rotation.y = this.heading;
     // Bank into turns (visual only).

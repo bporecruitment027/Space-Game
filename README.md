@@ -4,19 +4,25 @@ Browser-first realistic space combat game — overhead combat, Newtonian
 (zero-gravity) flight physics, modular ships, and (from Milestone 4)
 authoritative multiplayer. Built with Three.js (WebGL2).
 
-**Current status: Milestone 3 — Core Mechanics & MVP.** Skirmish mode
-with data-driven loadouts (hull + weapon + modules), laser/railgun
-combat, sensor-based fog of war with a live radar, and the same
-Newtonian flight model throughout. See [`docs/GDD.md`](docs/GDD.md)
-for the full design spec and milestone plan.
+**Current status: Milestone 4 — Multiplayer.** Skirmish mode with
+data-driven loadouts (hull + weapon + modules), laser/railgun combat,
+sensor-based fog of war with a live radar, and an authoritative
+multiplayer server (fixed-tick simulation, clients send inputs only).
+See [`docs/GDD.md`](docs/GDD.md) for the full design spec and milestone
+plan.
 
 ## Run it
 
 ```bash
-npm start          # serves on http://localhost:8000
+npm start          # serves the game on http://localhost:8000
+npm run server     # starts the authoritative multiplayer server (ws://localhost:8080)
 ```
 
-Then open the URL, pick a loadout on the deploy screen, and fight:
+Open the game, pick a loadout on the deploy screen, and fight. To play
+multiplayer, click **MULTIPLAYER** on the controls panel, enter the
+server URL (default `ws://<host>:8080`), and join — the server owns all
+physics; your client sends input and renders the broadcast state. A live
+kill leaderboard appears in the corner while connected.
 
 | Input | Action |
 |---|---|
@@ -36,8 +42,9 @@ Then open the URL, pick a loadout on the deploy screen, and fight:
 ## Test
 
 ```bash
-npm test           # physics + combat + modules/sensors unit tests
+npm test           # physics + combat + modules/sensors + networking unit tests
 npm run smoke      # headless boot of the full module graph
+node test/e2e-check.mjs   # live end-to-end check (needs a running server)
 ```
 
 ## Layout
@@ -57,8 +64,11 @@ src/
   modules/            Data-driven loadout tables (hulls/weapons/modules)
   systems/            Sensors: contact tracking + fog of war
   camera/             Overhead/chase follow camera
-  ui/                 HUD (compass + radar), loadout picker
-test/                 Physics, combat, and modules/sensors unit tests + smoke
+  net/                NetworkClient: snapshot rendering + input sending
+  ui/                 HUD (compass + radar), loadout picker, MP overlay
+server/               Authoritative GameServer (ws) + entry point
+test/                 Physics, combat, modules/sensors, networking tests
+                   + smoke + live e2e check
 docs/GDD.md           Game Design Document + milestone roadmap
 vendor/               Vendored Three.js build (demo runs offline)
 ```
@@ -66,7 +76,7 @@ vendor/               Vendored Three.js build (demo runs offline)
 ## Roadmap
 
 M1 Concept & prototype ✅ → M2 Vertical slice (enemy, weapons, asteroid
-collisions) ✅ → M3 MVP (loadouts, sensors, skirmish) ✅ → M4
-Multiplayer (authoritative server) → M5 Content (mining, economy, more
-ships) → M6 Optimization & PWA → M7 Release. Details in
+collisions) ✅ → M3 MVP (loadouts, sensors, skirmish) ✅ → M4 Multiplayer
+(authoritative server, networked client) ✅ → M5 Content (mining,
+economy, more ships) → M6 Optimization & PWA → M7 Release. Details in
 `docs/GDD.md` §8.

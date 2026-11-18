@@ -1,10 +1,10 @@
 # Space Combat — Game Design Document
 
-**Status:** Milestone 3 (Core Mechanics & MVP) — loadouts, sensors, and skirmish mode delivered.
+**Status:** Milestone 4 (Multiplayer) — authoritative server, fixed-tick sim, and networked client delivered.
 **Last updated:** 2026-11-18
 
 This document is the living design spec for the roadmap. Each milestone
-below maps to the development roadmap; Milestones 1–3 are implemented
+below maps to the development roadmap; Milestones 1–4 are implemented
 in this branch. Later milestones extend it without changing the core
 flight model.
 
@@ -152,9 +152,10 @@ the loadout screen with the score shown. The run loop is driven by
   projectiles, asteroid collisions + fragmentation, health bars, one
   playable arena. ✅
 - **M3 — Core Mechanics & MVP:** ship customization (hull + weapon
-  modules), sensor/fog-of-war contacts, full UI overlays, skirmish mode.
-- **M4 — Multiplayer:** authoritative Node.js server (Socket.IO/ws),
-  fixed-tick simulation, clients send inputs only.
+  modules), sensor/fog-of-war contacts, full UI overlays, skirmish mode. ✅
+- **M4 — Multiplayer:** authoritative Node.js server (ws), fixed-tick
+  simulation, clients send inputs only; per-ship score/kill attribution
+  and a live kill leaderboard. ✅
 - **M5 — Content Expansion:** more hulls/weapons (laser, railgun,
   missile), asteroid mining + resource economy, upgrades.
 - **M6 — Optimization & Deployment:** LOD/instancing, KTX2/Draco assets,
@@ -190,6 +191,23 @@ the loadout screen with the score shown. The run loop is driven by
 - [x] Weapon variety: laser (fast, light) and railgun (slow, heavy).
 - [x] Module variety: Sensor Array (+range), Reinforced Armor (+HP).
 - [x] Module + sensor unit tests pass (`npm test` — 39 tests).
+
+**Milestone 4**
+- [x] Simulation core generalized: `Game` accepts one command (solo) or
+      per-ship command arrays (server); AI targets the nearest player;
+      kills credited to the shooting ship (per-ship `score`/`kills`).
+- [x] Headless server seam: `Game`/`Ship`/`Asteroids`/`Projectiles` run
+      with no Three.js scene (meshes null, visual no-ops).
+- [x] Authoritative `GameServer` (`server/gameServer.js`): fixed-tick
+      loop, clients send input commands only, world state broadcast as
+      plain-JSON snapshots at the tick rate.
+- [x] Client `NetworkClient` renders server snapshots (remote ships +
+      asteroids) and sends keyboard input; local physics is never
+      simulated in network mode.
+- [x] Server round lifecycle: game-over broadcasts, world auto-resets
+      after a short delay; disconnects remove the ship cleanly.
+- [x] Networking unit tests pass (`npm test` — 47 tests); live
+      end-to-end check via `test/e2e-check.mjs` against a running server.
 
 ## 10. Known risks & mitigations
 

@@ -16,19 +16,25 @@ import * as THREE from 'three';
 const POOL_SIZE = 160;
 
 export class Projectiles {
+  /**
+   * @param {THREE.Scene|null} scene  null for headless (server) mode.
+   */
   constructor(scene) {
     this.scene = scene;
+    this.headless = !scene;
     this.pool = [];
     this.active = [];
 
-    const geo = new THREE.SphereGeometry(0.32, 8, 6);
+    const geo = this.headless ? null : new THREE.SphereGeometry(0.32, 8, 6);
     for (let i = 0; i < POOL_SIZE; i++) {
-      const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+      const mesh = this.headless ? null : new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
         color: 0x7fe3ff, transparent: true, opacity: 0.95,
         blending: THREE.AdditiveBlending, depthWrite: false,
       }));
-      mesh.visible = false;
-      scene.add(mesh);
+      if (mesh) {
+        mesh.visible = false;
+        scene.add(mesh);
+      }
       this.pool.push({
         mesh,
         active: false,
@@ -63,10 +69,12 @@ export class Projectiles {
     bolt.damage = damage;
     bolt.life = life;
     bolt.scale = scale;
-    bolt.mesh.material.color.setHex(color);
-    bolt.mesh.scale.setScalar(scale);
-    bolt.mesh.visible = true;
-    bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+    if (!this.headless) {
+      bolt.mesh.material.color.setHex(color);
+      bolt.mesh.scale.setScalar(scale);
+      bolt.mesh.visible = true;
+      bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+    }
     this.active.push(bolt);
     return true;
   }
@@ -86,7 +94,7 @@ export class Projectiles {
       bolt.life -= dt;
       bolt.position.x += bolt.velocity.x * dt;
       bolt.position.z += bolt.velocity.z * dt;
-      bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+      if (!this.headless) bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
 
       let dead = bolt.life <= 0;
 
@@ -122,8 +130,10 @@ export class Projectiles {
 
       if (dead) {
         bolt.active = false;
-        bolt.mesh.visible = false;
-        bolt.mesh.scale.setScalar(1); // reset for the next pooled reuse
+        if (!this.headless) {
+          bolt.mesh.visible = false;
+          bolt.mesh.scale.setScalar(1); // reset for the next pooled reuse
+        }
         this.active.splice(i, 1);
         this.pool.push(this.pool.shift()); // rotate pool
       }
@@ -134,7 +144,7 @@ export class Projectiles {
   clear() {
     for (const bolt of this.active) {
       bolt.active = false;
-      bolt.mesh.visible = false;
+      if (!this.headless) bolt.mesh.visible = false;
     }
     this.active.length = 0;
   }

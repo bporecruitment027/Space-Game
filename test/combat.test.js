@@ -228,7 +228,9 @@ test('Asteroids: bolts chip damage and trigger fragmentation', () => {
   // Disable drift so positions stay predictable.
   for (const a of field.entities) { a.velocity = { x: 0, z: 0 }; }
 
-  let rock = field.entities[0];
+  // Pick the largest rock so the radius always clears the fragment
+  // threshold (radius > MIN_RADIUS + 0.5) regardless of random spawn.
+  let rock = field.entities.reduce((a, b) => (a.radius > b.radius ? a : b));
   const startRadius = rock.radius;
   field.hit(rock, rock.maxDamage);
   field.update(1 / 120);
@@ -278,9 +280,11 @@ test('Game: player bolts damage and kill enemies, awarding score', () => {
   // Park an enemy directly in front of the player, aligned.
   // forward = (sin h, cos h): enemy at (0,15) faces the player at origin
   // with heading π; the player at origin faces +Z (heading 0) at the enemy.
-  enemy.spawn(0, 15, 0, Math.PI);
+  enemy.spawn(0, 15, Math.PI);
   enemy.invulnerableTime = 0;
   game.player.spawn(0, 0, 0, 0);
+  // Stub out asteroids (including respawn) so the bolt flight is clean.
+  game.asteroids = { entities: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
 
   const events = [];
   game.onEvent = (name, data) => events.push([name, data]);
@@ -289,11 +293,11 @@ test('Game: player bolts damage and kill enemies, awarding score', () => {
   let killed = false;
   for (let i = 0; i < 240 && !killed; i++) {
     game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
-    if (game.score > 0) killed = true;
+    if (game.player.score > 0) killed = true;
   }
   assert.ok(killed, 'player bolt should kill the aligned enemy');
-  assert.ok(game.score >= 100, 'kill awards score');
-  assert.equal(game.kills, 1);
+  assert.ok(game.player.score >= 100, 'kill awards score');
+  assert.equal(game.player.kills, 1);
   assert.ok(events.some((e) => e[0] === 'kill'), 'kill event emitted');
 });
 
@@ -302,10 +306,13 @@ test('Game: enemy bolts damage the player and game over ends the run', () => {
   const enemy = game.enemies[0];
   // forward = (sin h, cos h): enemy at (0,12) faces the player at the
   // origin with heading π; the player at the origin faces +Z (heading 0).
-  enemy.spawn(0, 12, 0, Math.PI);
+  enemy.spawn(0, 12, Math.PI);
   enemy.invulnerableTime = 0;
   game.player.spawn(0, 0, 0, 0);
   game.player.invulnerableTime = 0;
+  // Stub out asteroids (including respawn) so enemy bolts reach the
+  // player and the enemy can't die to a ram.
+  game.asteroids = { entities: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
 
   // Disable AI fleeing and force the enemy to hold and fire.
   game.ai = new EnemyAI({ fireInterval: 0.1, fleeHealth: 0 });
@@ -325,14 +332,15 @@ test('Game: enemy bolts damage the player and game over ends the run', () => {
 
 test('Game: reset clears bolts, enemies, and score', () => {
   const { game } = makeGame(2);
-  game.score = 500;
+  game.player.score = 500;
+  game.player.kills = 3;
   game.player.invulnerableTime = 0;
   // Fire some bolts.
   for (let i = 0; i < 10; i++) game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
   game.reset();
 
-  assert.equal(game.score, 0);
-  assert.equal(game.kills, 0);
+  assert.equal(game.player.score, 0);
+  assert.equal(game.player.kills, 0);
   assert.equal(game.state, 'running');
   assert.equal(game.player.health, game.player.maxHealth);
   assert.equal(game.enemies.filter((e) => e.alive).length, 2);

@@ -26,17 +26,20 @@ function wobbleGeometry(geo, wobble) {
 
 export class Asteroids {
   /**
-   * @param {THREE.Scene} scene
-   * @param {object} [opts] { count, fieldSize, baseSpeed }
+   * @param {THREE.Scene|null} scene  null for headless (server) mode.
+   * @param {object} [opts] { count, fieldSize, baseSpeed, headless }
    */
-  constructor(scene, { count = 26, fieldSize = 90, baseSpeed = 22 } = {}) {
+  constructor(scene, { count = 26, fieldSize = 90, baseSpeed = 22, headless = false } = {}) {
     this.scene = scene;
+    this.headless = headless || !scene;
     this.fieldSize = fieldSize;
     this.baseSpeed = baseSpeed;
     this.entities = [];
-    this._matA = new THREE.MeshStandardMaterial({ color: 0x6b6258, roughness: 0.95, metalness: 0.05, flatShading: true });
-    this._matB = new THREE.MeshStandardMaterial({ color: 0x5d544b, roughness: 0.95, metalness: 0.05, flatShading: true });
-    this._flashMat = new THREE.MeshStandardMaterial({ color: 0xb8a88c, roughness: 0.8, metalness: 0.05, flatShading: true, emissive: 0x442a11, emissiveIntensity: 0.8 });
+    if (!this.headless) {
+      this._matA = new THREE.MeshStandardMaterial({ color: 0x6b6258, roughness: 0.95, metalness: 0.05, flatShading: true });
+      this._matB = new THREE.MeshStandardMaterial({ color: 0x5d544b, roughness: 0.95, metalness: 0.05, flatShading: true });
+      this._flashMat = new THREE.MeshStandardMaterial({ color: 0xb8a88c, roughness: 0.8, metalness: 0.05, flatShading: true, emissive: 0x442a11, emissiveIntensity: 0.8 });
+    }
 
     for (let i = 0; i < count; i++) this.spawn(true);
   }
@@ -45,7 +48,7 @@ export class Asteroids {
     const geo = new THREE.IcosahedronGeometry(radius, 0);
     wobbleGeometry(geo, 0.72 + Math.random() * 0.55);
     const mesh = new THREE.Mesh(geo, radius > 4 ? this._matA : this._matB);
-    this.scene.add(mesh);
+    if (!this.headless) this.scene.add(mesh);
     return { geo, mesh };
   }
 
@@ -112,11 +115,15 @@ export class Asteroids {
 
       if (a.flashTime > 0) {
         a.flashTime -= dt;
-        a.mesh.material = a.flashTime > 0 ? this._flashMat : (a.radius > 4 ? this._matA : this._matB);
+        if (!this.headless) {
+          a.mesh.material = a.flashTime > 0 ? this._flashMat : (a.radius > 4 ? this._matA : this._matB);
+        }
       }
 
-      a.mesh.position.set(a.position.x, 0, a.position.z);
-      a.mesh.rotation.set(a.rotation.x, a.rotation.y, a.rotation.z);
+      if (!this.headless) {
+        a.mesh.position.set(a.position.x, 0, a.position.z);
+        a.mesh.rotation.set(a.rotation.x, a.rotation.y, a.rotation.z);
+      }
 
       // Bounce off the field ring so drift stays in-arena.
       const limit = this.fieldSize;
@@ -138,8 +145,10 @@ export class Asteroids {
   /** Split an asteroid into two smaller chunks flying apart. */
   fragment(a) {
     a.alive = false;
-    this.scene.remove(a.mesh);
-    a.geo.dispose();
+    if (!this.headless && a.mesh && a.geo) {
+      this.scene.remove(a.mesh);
+      a.geo.dispose();
+    }
 
     for (let i = 0; i < 2; i++) {
       const child = this.spawn(false, {
@@ -171,7 +180,7 @@ export class Asteroids {
   /** Remove everything (game reset). */
   clear() {
     for (const a of this.entities) {
-      if (a.mesh && a.geo) {
+      if (!this.headless && a.mesh && a.geo) {
         this.scene.remove(a.mesh);
         a.geo.dispose();
       }

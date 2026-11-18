@@ -32,11 +32,12 @@ const BOOST_RECHARGE = 0.18; // per second while idle
 
 export class Game {
   /**
-   * @param {THREE.Scene} scene
-   * @param {object} [opts] { enemyCount, spawnRadius, playerLoadout }
+   * @param {THREE.Scene|null} scene  null for headless (server) mode.
+   * @param {object} [opts] { enemyCount, spawnRadius, playerLoadout, headless }
    */
-  constructor(scene, { enemyCount = 4, spawnRadius = 40, playerLoadout = defaultLoadout() } = {}) {
+  constructor(scene, { enemyCount = 4, spawnRadius = 40, playerLoadout = defaultLoadout(), headless = false } = {}) {
     this.scene = scene;
+    this.headless = headless || !scene;
     this.enemyCount = enemyCount;
     this.spawnRadius = spawnRadius;
     this.playerLoadout = playerLoadout;
@@ -56,17 +57,18 @@ export class Game {
       radius: stats.radius,
       weapon: stats.fire,
       sensorRange: stats.sensorRange,
+      headless: this.headless,
     });
     this.enemies = [];
+    this.players = [this.player]; // registry of player-controlled ships
     this.projectiles = new Projectiles(scene);
-    this.asteroids = new Asteroids(scene);
+    this.asteroids = new Asteroids(scene, { headless: this.headless });
     this.ai = new EnemyAI();
     this.sensors = new Sensors();
 
-    this.score = 0;
-    this.kills = 0;
     this.state = 'deploying'; // 'deploying' | 'running' | 'over'
     this.onEvent = () => {}; // callback(event) for HUD/toasts
+    this._tick = 0;
 
     this.spawnPlayer();
     this.spawnEnemies();
@@ -93,12 +95,15 @@ export class Game {
       weapon: stats.fire,
       sensorRange: stats.sensorRange,
     });
-    if (old) this.scene.remove(old.mesh);
-    this.scene.add(this.player.mesh);
+    if (old && !this.headless) this.scene.remove(old.mesh);
+    if (!this.headless) this.scene.add(this.player.mesh);
     this.sensors.clear();
     this.spawnPlayer();
-    this.score = 0;
-    this.kills = 0;
+    // Keep the players registry in sync — deploy() replaces the ship.
+    const deployIdx = this.players.indexOf(old);
+    if (deployIdx >= 0) this.players[deployIdx] = this.player;
+    this.player.score = 0;
+    this.player.kills = 0;
     this.boostFraction = 1.0;
     this.state = 'running';
     this.emit('deployed', { loadout });
@@ -109,11 +114,10 @@ export class Game {
     this.projectiles.clear();
     this.asteroids.clear();
     this.asteroids = new Asteroids(this.scene);
-    this.enemies.forEach((e) => this.scene.remove(e.mesh));
+    this.enemies.forEach((e) => { if (!this.headless) this.scene.remove(e.mesh); });
     this.enemies.length = 0;
     this.sensors.clear();
-    this.score = 0;
-    this.kills = 0;
+    for (const p of this.players) { p.score = 0; p.kills = 0; }
     this.state = 'running';
     this.boostFraction = 1.0;
     this.spawnPlayer();
@@ -135,7 +139,9 @@ export class Game {
         physics: ENEMY_TUNING,
         meshOptions: { hullColor: 0x8f3a3a, darkColor: 0x2a1414, accentColor: 0xff3b3b },
         maxHealth: 60, radius: 2.0,
+        headless: this.headless,
       });
+      if (!this.headless) this.scene.add(ship.mesh);
       ship.spawn(Math.cos(angle) * r, Math.sin(angle) * r, angle + Math.PI + Math.random() * 0.6, 1.0);
       this.enemies.push(ship);
     }
@@ -148,21 +154,29 @@ export class Game {
   /**
    * Advance the simulation one step.
    * @param {number} dt   Fixed physics step (1/120).
-   * @param {object} input Player command (KeyboardInput output).
+   * @param {object|object[]} inputs Player commands. A single command
+   *   object applies to the local player; an array/map of {shipId: cmd}
+   *   applies to each registered player (multiplayer server).
    */
-  step(dt, input) {
+  step(dt, inputs) {
     if (this.state !== 'running') return;
 
-    // 1. Enemy decisions.
+    // Normalise inputs: single command → map for the local player.
+    const inputMap = this._normalizeInputs(inputs);
+
+    // 1. Enemy decisions. Each AI picks the nearest alive player as target.
     for (const enemy of this.enemies) {
       if (!enemy.alive) continue;
-      const cmd = this.ai.decide({ ship: enemy, target: this.player, asteroids: this.asteroids, dt });
+      const target = this._nearestPlayer(enemy);
+      const cmd = this.ai.decide({ ship: enemy, target, asteroids: this.asteroids, dt });
       this._applyShipCommand(enemy, cmd, dt);
     }
 
-    // 2. Player.
-    if (this.player.alive) {
-      this._applyShipCommand(this.player, input, dt);
+    // 2. Players (local + remote).
+    for (const player of this.players) {
+      if (!player.alive) continue;
+      const cmd = inputMap.get(player.id) ?? { thrust: 0, yaw: 0, brake: false, boost: false, fire: false };
+      this._applyShipCommand(player, cmd, dt);
     }
 
     // 3. Bolt rules.
@@ -172,21 +186,55 @@ export class Game {
     this._resolveRams();
 
     // 5. Asteroid field.
-    this.asteroids.update(dt, this.player);
+    this.asteroids.update(dt, this.players[0]);
 
-    // 6. Sensor scan (fog of war) — player radar reads the results.
+    // 6. Sensor scan (fog of war) — each player gets their own scan.
     this.sensors.track(this._allShips());
-    this.sensors.scan(this.player, dt);
+    for (const player of this.players) {
+      this.sensors.scan(player, dt);
+    }
 
     // 7. Check deaths.
-    if (this.player.health <= 0 && this.state === 'running') {
-      this.state = 'over';
-      this.emit('game-over', { score: this.score, kills: this.kills });
+    for (const player of this.players) {
+      if (player.health <= 0 && this.state === 'running') {
+        this.state = 'over';
+        this.emit('game-over', { score: player.score, kills: player.kills });
+        return;
+      }
     }
   }
 
+  _normalizeInputs(inputs) {
+    const map = new Map();
+    if (!inputs) return map;
+    if (Array.isArray(inputs)) {
+      for (const entry of inputs) {
+        if (entry && entry.shipId) map.set(entry.shipId, entry.command ?? entry);
+      }
+      return map;
+    }
+    if (typeof inputs === 'object' && inputs.shipId) {
+      map.set(inputs.shipId, inputs.command ?? inputs);
+      return map;
+    }
+    // Single command object → local player.
+    map.set(this.player.id, inputs);
+    return map;
+  }
+
+  _nearestPlayer(from) {
+    let best = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (!p.alive) continue;
+      const d = Math.hypot(p.position.x - from.position.x, p.position.z - from.position.z);
+      if (d < bestD) { bestD = d; best = p; }
+    }
+    return best ?? this.player;
+  }
+
   _allShips() {
-    return [this.player, ...this.enemies];
+    return [...this.players, ...this.enemies];
   }
 
   _applyShipCommand(ship, cmd, dt) {
@@ -219,12 +267,16 @@ export class Game {
       const target = hit.ref;
       const killed = target.takeDamage(bolt.damage);
       if (killed && !target.isPlayer) {
-        this.score += 100;
-        this.kills += 1;
-        this.emit('kill', { by: bolt.ownerId, victim: target.id, score: this.score });
+        // Credit the kill to the shooter's ship (player or AI).
+        const shooter = this._shipById(bolt.ownerId);
+        if (shooter) {
+          shooter.score += 100;
+          shooter.kills += 1;
+        }
+        this.emit('kill', { by: bolt.ownerId, victim: target.id, score: shooter ? shooter.score : 0 });
         this._respawnEnemy(target);
       } else if (killed) {
-        this.emit('player-killed');
+        this.emit('player-killed', { victim: target.id });
       } else {
         this.emit('hit', { target: target.id });
       }
@@ -233,6 +285,10 @@ export class Game {
       this.asteroids.hit(rock, bolt.damage);
       this.emit('asteroid-hit');
     }
+  }
+
+  _shipById(id) {
+    return this._allShips().find((s) => s.id === id);
   }
 
   _respawnEnemy(enemy) {
@@ -247,7 +303,7 @@ export class Game {
     for (const ship of this._allShips()) {
       if (!ship.alive || ship.invulnerableTime > 0) continue;
       for (const rock of this.asteroids.shipCollisionCandidates(ship)) {
-        const dmg = ship === this.player ? this.asteroids.ramDamage(ship) : 18;
+        const dmg = ship.isPlayer ? this.asteroids.ramDamage(ship) : 18;
         const killed = ship.takeDamage(dmg);
         rock.damage += 25;
         rock.flashTime = 0.1;
@@ -260,53 +316,142 @@ export class Game {
         ship.position.z += (dz / d) * push;
         rock.velocity.x += (dx / d) * 4;
         rock.velocity.z += (dz / d) * 4;
-        if (killed && ship.isPlayer) this.emit('player-killed');
+        if (killed && ship.isPlayer) this.emit('player-killed', { victim: ship.id });
       }
     }
 
-    // Ships vs ships (both take ramming damage).
-    for (let i = 0; i < this.enemies.length; i++) {
-      const a = this.enemies[i];
+    // Ships vs ships (all pairs — player vs enemy, player vs player).
+    const all = this._allShips();
+    for (let i = 0; i < all.length; i++) {
+      const a = all[i];
       if (!a.alive || a.invulnerableTime > 0) continue;
-      const dx = a.position.x - this.player.position.x;
-      const dz = a.position.z - this.player.position.z;
-      const r = a.radius + this.player.radius;
-      if (dx * dx + dz * dz < r * r && this.player.alive && this.player.invulnerableTime <= 0) {
-        const speed = Math.hypot(this.player.velocity.x - a.velocity.x, this.player.velocity.z - a.velocity.z);
-        const dmg = Math.min(35, 12 + speed * 0.05);
-        const killedEnemy = a.takeDamage(dmg);
-        const killedPlayer = this.player.takeDamage(dmg * 0.7);
-        // Separate.
-        const d = Math.hypot(dx, dz) || 1;
-        const push = (a.radius + this.player.radius) * 0.5;
-        a.position.x += (dx / d) * push; a.position.z += (dz / d) * push;
-        this.player.position.x -= (dx / d) * push; this.player.position.z -= (dz / d) * push;
-        if (killedEnemy) {
-          this.score += 100; this.kills += 1;
-          this.emit('kill', { by: 'player', victim: a.id, score: this.score });
-          this._respawnEnemy(a);
+      for (let j = i + 1; j < all.length; j++) {
+        const b = all[j];
+        if (!b.alive || b.invulnerableTime > 0) continue;
+        const dx = a.position.x - b.position.x;
+        const dz = a.position.z - b.position.z;
+        const r = a.radius + b.radius;
+        if (dx * dx + dz * dz < r * r) {
+          const speed = Math.hypot(a.velocity.x - b.velocity.x, a.velocity.z - b.velocity.z);
+          const dmg = Math.min(35, 12 + speed * 0.05);
+          const killedA = a.takeDamage(dmg);
+          const killedB = b.takeDamage(dmg);
+          // Separate.
+          const d = Math.hypot(dx, dz) || 1;
+          const push = (a.radius + b.radius) * 0.5;
+          a.position.x += (dx / d) * push; a.position.z += (dz / d) * push;
+          b.position.x -= (dx / d) * push; b.position.z -= (dz / d) * push;
+          // Credit ramming kills.
+          if (killedA && b.isPlayer) {
+            b.score += 100; b.kills += 1;
+            this.emit('kill', { by: b.id, victim: a.id, score: b.score });
+            if (!a.isPlayer) this._respawnEnemy(a);
+          }
+          if (killedB && a.isPlayer) {
+            a.score += 100; a.kills += 1;
+            this.emit('kill', { by: a.id, victim: b.id, score: a.score });
+            if (!b.isPlayer) this._respawnEnemy(b);
+          }
+          if (killedA && a.isPlayer) this.emit('player-killed', { victim: a.id });
+          if (killedB && b.isPlayer) this.emit('player-killed', { victim: b.id });
         }
-        if (killedPlayer) this.emit('player-killed');
       }
     }
   }
 
-  /** HUD state snapshot for this frame. */
+  /** HUD state snapshot for this frame (local player's view). */
   hudState() {
+    const p = this.player;
     return {
-      score: this.score,
-      kills: this.kills,
+      score: p.score,
+      kills: p.kills,
       enemiesAlive: this.enemies.filter((e) => e.alive).length,
       enemies: this.enemies
         .filter((e) => e.alive)
-        .map((e) => ({ id: e.id, fraction: e.healthFraction, distance: Math.hypot(e.position.x - this.player.position.x, e.position.z - this.player.position.z) })),
-      playerHealth: this.player.health,
-      playerMaxHealth: this.player.maxHealth,
+        .map((e) => ({ id: e.id, fraction: e.healthFraction, distance: Math.hypot(e.position.x - p.position.x, e.position.z - p.position.z) })),
+      playerHealth: p.health,
+      playerMaxHealth: p.maxHealth,
       boostFraction: this.boostFraction,
       state: this.state,
       loadout: this.playerLoadout,
-      radar: this.sensors.getRadarContacts(this.player),
-      sensorRange: this.player.sensorRange,
+      radar: this.sensors.getRadarContacts(p),
+      sensorRange: p.sensorRange,
     };
+  }
+
+  /**
+   * Register a remote player ship (called by the server on join).
+   * @param {string} id Unique player id.
+   * @param {object} loadout { hull, weapon, modules[] }
+   * @returns {Ship} the new player ship
+   */
+  addPlayer(id, loadout = defaultLoadout()) {
+    const stats = deriveStats(loadout);
+    const ship = new Ship({
+      id, isPlayer: true,
+      physics: stats,
+      meshOptions: {
+        hullColor: stats.colors.hull,
+        darkColor: stats.colors.dark,
+        accentColor: stats.colors.accent,
+      },
+      maxHealth: stats.maxHealth,
+      radius: stats.radius,
+      weapon: stats.fire,
+      sensorRange: stats.sensorRange,
+      headless: this.headless,
+    });
+    if (!this.headless) this.scene.add(ship.mesh);
+    // Spawn at a random point on the ring, facing the centre.
+    const angle = Math.random() * Math.PI * 2;
+    const r = this.spawnRadius * (0.7 + Math.random() * 0.3);
+    ship.spawn(Math.cos(angle) * r, Math.sin(angle) * r, angle + Math.PI, 2.0);
+    this.players.push(ship);
+    this.emit('player-joined', { id });
+    return ship;
+  }
+
+  /** Remove a remote player ship (called by the server on disconnect). */
+  removePlayer(id) {
+    const idx = this.players.findIndex((p) => p.id === id);
+    if (idx < 0) return;
+    const [removed] = this.players.splice(idx, 1);
+    if (!this.headless && removed.mesh) this.scene.remove(removed.mesh);
+    this.sensors.clear();
+    this.emit('player-left', { id });
+  }
+
+  /**
+   * Serialise the authoritative world state for network broadcast.
+   * @returns {object} plain-JSON-safe snapshot of all ships + state.
+   */
+  snapshot() {
+    const shipState = (s) => ({
+      id: s.id,
+      isPlayer: s.isPlayer,
+      x: s.position.x,
+      z: s.position.z,
+      vx: s.velocity.x,
+      vz: s.velocity.z,
+      heading: s.heading,
+      health: s.health,
+      maxHealth: s.maxHealth,
+      alive: s.alive,
+      score: s.score,
+      kills: s.kills,
+    });
+    return {
+      state: this.state,
+      tick: this._tick,
+      ships: this._allShips().map(shipState),
+      asteroids: this.asteroids.entities
+        .filter((a) => a.alive)
+        .map((a) => ({ x: a.position.x, z: a.position.z, radius: a.radius })),
+    };
+  }
+
+  /** Advance the internal tick counter (server uses this for snapshots). */
+  tickStep() {
+    this._tick = (this._tick ?? 0) + 1;
   }
 }

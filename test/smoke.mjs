@@ -38,6 +38,7 @@ globalThis.window = {
   innerWidth: 1280,
   innerHeight: 720,
   devicePixelRatio: 1,
+  location: { hostname: 'localhost' },
   addEventListener() {},
   requestAnimationFrame: () => 0,
 };

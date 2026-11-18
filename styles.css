@@ -180,3 +180,66 @@ kbd {
 .loadout-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .loadout-note { color: #6f8db0; font-size: 11px; margin-top: 10px; text-align: center; }
+
+/* ---- Milestone 4: multiplayer UI ---- */
+
+#net-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(3, 6, 12, 0.82);
+  z-index: 20;
+}
+#net-screen.hidden { display: none; }
+
+#net-screen input[type="text"] {
+  width: 100%;
+  background: rgba(10, 18, 32, 0.85);
+  border: 1px solid #3a5f8a;
+  color: #cfe3ff;
+  padding: 8px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 14px;
+  outline: none;
+}
+#net-screen input[type="text"]:focus { border-color: #7fe3ff; }
+
+.net-leaderboard {
+  top: 12px;
+  right: 12px;
+  min-width: 200px;
+  padding: 10px 12px;
+}
+.net-leaderboard.hidden { display: none; }
+
+.lb-row {
+  display: grid;
+  grid-template-columns: 28px 1fr 36px 48px;
+  gap: 6px;
+  font-size: 12px;
+  color: #cfe3ff;
+  padding: 2px 0;
+  border-bottom: 1px solid rgba(127, 227, 255, 0.08);
+}
+.lb-row.lb-me { color: #7fff8c; font-weight: 600; }
+.lb-rank { color: #9db8d8; }
+.lb-kills { text-align: right; }
+.lb-score { text-align: right; color: #ffd479; }
+
+.net-status {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-size: 12px;
+  color: #7fe3ff;
+  background: rgba(6, 14, 26, 0.85);
+  border: 1px solid #3a5f8a;
+  z-index: 15;
+}
+.net-status.hidden { display: none; }
+.net-status.net-bad { color: #ff6b6b; border-color: #8a3a3a; }
