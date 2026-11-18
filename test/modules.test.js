@@ -180,3 +180,51 @@ test('Sensors: dead targets are removed from contacts', () => {
   sensors.scan(observer, 0.01);
   assert.equal(sensors.contacts.has('e1'), false);
 });
+
+// ---------------------------------------------------------------------------
+// Milestone 5: expanded content (scout/heavy hulls, missile, engine module)
+// ---------------------------------------------------------------------------
+
+test('M5: scout is faster and more agile but fragile', () => {
+  const fighter = deriveStats({ hull: 'fighter', weapon: 'laser', modules: [] });
+  const scout = deriveStats({ hull: 'scout', weapon: 'laser', modules: [] });
+  assert.ok(scout.maxThrust > fighter.maxThrust, 'scout has more thrust');
+  assert.ok(scout.mass < fighter.mass, 'scout is lighter');
+  assert.ok(scout.maxHealth < fighter.maxHealth, 'scout is fragile');
+  assert.ok(scout.sensorRange > fighter.sensorRange, 'scout has longer sensors');
+});
+
+test('M5: heavy is a slow tank with the most HP', () => {
+  const heavy = deriveStats({ hull: 'heavy', weapon: 'laser', modules: [] });
+  const bulwark = deriveStats({ hull: 'bulwark', weapon: 'laser', modules: [] });
+  assert.ok(heavy.maxHealth > bulwark.maxHealth, 'heavy out-tanks bulwark');
+  assert.ok(heavy.maxThrust < bulwark.maxThrust, 'heavy is slow');
+  assert.ok(heavy.radius > bulwark.radius, 'heavy is the biggest hull');
+});
+
+test('M5: missile is a homing weapon with high damage and long cooldown', () => {
+  const m = WEAPON_DEFS.missile;
+  assert.equal(m.homing, true, 'missile is homing');
+  assert.ok(m.damage > WEAPON_DEFS.laser.damage, 'missile out-damages laser');
+  assert.ok(m.cooldown > WEAPON_DEFS.railgun.cooldown, 'missile has the longest cooldown');
+  assert.ok(m.turnRate > 0 && m.seekRange > 0, 'missile has steering + seek range');
+});
+
+test('M5: engine module boosts thrust', () => {
+  const base = deriveStats({ hull: 'fighter', weapon: 'laser', modules: [] });
+  const tuned = deriveStats({ hull: 'fighter', weapon: 'laser', modules: ['engine'] });
+  assert.equal(tuned.maxThrust, Math.round(base.maxThrust * (1 + MODULE_DEFS.engine.thrustBonus)));
+});
+
+test('M5: hull sensor bonus applies to derived range', () => {
+  const scout = deriveStats({ hull: 'scout', weapon: 'laser', modules: [] });
+  assert.equal(scout.sensorRange, BASE_SENSOR_RANGE + HULLS.scout.sensorBonus);
+});
+
+test('M5: missile loadout validates and derives', () => {
+  const loadout = { hull: 'scout', weapon: 'missile', modules: ['sensor', 'engine'] };
+  assert.equal(validateLoadout(loadout).ok, true);
+  const s = deriveStats(loadout);
+  assert.equal(s.fire.name, 'Missile');
+  assert.equal(s.hull, 'scout');
+});

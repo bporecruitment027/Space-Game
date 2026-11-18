@@ -20,6 +20,7 @@ import { EnemyAI } from './combat/EnemyAI.js';
 import { Asteroids } from './world/Asteroids.js';
 import { Sensors } from './systems/Sensors.js';
 import { deriveStats, defaultLoadout } from './modules/Modules.js';
+import { applyUpgrade, upgradeCost, reapplyUpgrades, UPGRADE_DEFS } from './modules/Upgrades.js';
 
 const ENEMY_TUNING = {
   mass: 950, yawInertia: 2400, maxThrust: 7200, maxTorque: 3000,
@@ -104,6 +105,11 @@ export class Game {
     if (deployIdx >= 0) this.players[deployIdx] = this.player;
     this.player.score = 0;
     this.player.kills = 0;
+    // Progression persists across deploys: ore and upgrades carry over
+    // to the new hull (Milestone 5 economy).
+    this.player.ore = old.ore;
+    this.player.upgrades = { ...old.upgrades };
+    reapplyUpgrades(this.player);
     this.boostFraction = 1.0;
     this.state = 'running';
     this.emit('deployed', { loadout });
@@ -188,6 +194,16 @@ export class Game {
     // 5. Asteroid field.
     this.asteroids.update(dt, this.players[0]);
 
+    // 5b. Ore economy: credit the killing ship for each rock destroyed
+    // this tick (asteroid mining — Milestone 5).
+    for (const rock of this.asteroids.destroyedThisTick) {
+      const miner = this._shipById(rock.lastHitBy);
+      if (miner && rock.ore > 0) {
+        miner.ore += rock.ore;
+        this.emit('ore', { by: miner.id, amount: rock.ore, rich: rock.rich });
+      }
+    }
+
     // 6. Sensor scan (fog of war) — each player gets their own scan.
     this.sensors.track(this._allShips());
     for (const player of this.players) {
@@ -246,17 +262,23 @@ export class Game {
     } else if (ship.isPlayer) {
       this.boostFraction = Math.min(1, this.boostFraction + BOOST_RECHARGE * dt);
     }
+    // Upgrades scale effective thrust (Milestone 5).
+    thrust *= ship.thrustMult;
 
     ship.update(dt, { thrust, yaw: cmd.yaw, brake: cmd.brake });
     if (cmd.fire && ship.fireCooldown <= 0 && ship.alive) {
-      // Weapon stats come from the ship's loadout (laser/railgun).
+      // Weapon stats come from the ship's loadout (laser/railgun/missile);
+      // upgrades scale damage.
       const w = ship.weapon;
       const ok = this.projectiles.fire(ship, {
         speed: w.speed,
-        damage: w.damage,
+        damage: w.damage * ship.damageMult,
         life: w.life,
         color: ship.isPlayer ? w.color : 0xff6b4a,
         scale: w.scale,
+        homing: !!w.homing,
+        turnRate: w.turnRate ?? 0,
+        seekRange: w.seekRange ?? 0,
       });
       if (ok) ship.fireCooldown = w.cooldown;
     }
@@ -282,7 +304,8 @@ export class Game {
       }
     } else if (hit.kind === 'asteroid') {
       const rock = hit.ref;
-      this.asteroids.hit(rock, bolt.damage);
+      // Record the shooter so the killing blow credits the rock's ore.
+      this.asteroids.hit(rock, bolt.damage, bolt.ownerId);
       this.emit('asteroid-hit');
     }
   }
@@ -305,8 +328,8 @@ export class Game {
       for (const rock of this.asteroids.shipCollisionCandidates(ship)) {
         const dmg = ship.isPlayer ? this.asteroids.ramDamage(ship) : 18;
         const killed = ship.takeDamage(dmg);
-        rock.damage += 25;
-        rock.flashTime = 0.1;
+        // Ram damage counts toward destroying the rock (and credits ore).
+        this.asteroids.hit(rock, 25, ship.id);
         // Kick both apart so they don't sit overlapping.
         const dx = ship.position.x - rock.position.x;
         const dz = ship.position.z - rock.position.z;
@@ -365,6 +388,7 @@ export class Game {
     return {
       score: p.score,
       kills: p.kills,
+      ore: p.ore,
       enemiesAlive: this.enemies.filter((e) => e.alive).length,
       enemies: this.enemies
         .filter((e) => e.alive)
@@ -439,6 +463,8 @@ export class Game {
       alive: s.alive,
       score: s.score,
       kills: s.kills,
+      ore: s.ore,
+      upgrades: { ...s.upgrades },
     });
     return {
       state: this.state,
@@ -448,6 +474,25 @@ export class Game {
         .filter((a) => a.alive)
         .map((a) => ({ x: a.position.x, z: a.position.z, radius: a.radius })),
     };
+  }
+
+  /**
+   * Buy one level of an upgrade for a player ship (Milestone 5).
+   * Deducts ore and applies the effect. Returns { ok, error, level }.
+   * @param {string} shipId  Player ship id.
+   * @param {string} upgradeId
+   */
+  buyUpgrade(shipId, upgradeId) {
+    const ship = this._shipById(shipId);
+    if (!ship || !ship.isPlayer) return { ok: false, error: 'no such player' };
+    if (!(upgradeId in UPGRADE_DEFS)) return { ok: false, error: 'unknown upgrade' };
+    const level = ship.upgrades[upgradeId] ?? 0;
+    const cost = upgradeCost(upgradeId, level);
+    if (ship.ore < cost) return { ok: false, error: 'not enough ore' };
+    ship.ore -= cost;
+    applyUpgrade(ship, upgradeId);
+    this.emit('upgrade', { by: ship.id, upgrade: upgradeId, level: ship.upgrades[upgradeId] });
+    return { ok: true, level: ship.upgrades[upgradeId] };
   }
 
   /** Advance the internal tick counter (server uses this for snapshots). */

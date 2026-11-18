@@ -87,6 +87,9 @@ export class GameServer {
       case 'input':
         this._handleInput(ws, msg);
         break;
+      case 'upgrade':
+        this._handleUpgrade(ws, msg);
+        break;
       case 'leave':
         this._onDisconnect(ws);
         break;
@@ -118,6 +121,18 @@ export class GameServer {
     // Buffer the latest command — applied on the next tick.
     this.game._pendingInputs ??= new Map();
     this.game._pendingInputs.set(shipId, msg.command);
+  }
+
+  _handleUpgrade(ws, msg) {
+    const shipId = ws._shipId;
+    if (!shipId || shipId !== msg.shipId) return;
+    // The Game is authoritative: it validates the upgrade, checks ore,
+    // applies the effect, and the next snapshot broadcasts the result.
+    const res = this.game.buyUpgrade(shipId, msg.upgradeId);
+    if (!res.ok) {
+      // Send a rejection so the client can show why the purchase failed.
+      this._send(ws, { type: 'upgrade-failed', shipId, reason: res.error });
+    }
   }
 
   _onDisconnect(ws) {

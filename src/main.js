@@ -73,7 +73,31 @@ const loadoutUI = new LoadoutUI();
 loadoutUI.onDeploy = (loadout) => {
   game.deploy(loadout);
   loadoutUI.hide();
+  syncProgression();
 };
+// Upgrades: route to the local game or the authoritative server.
+loadoutUI.onUpgrade = (id) => {
+  if (mode === 'network' && net) {
+    net.sendUpgrade(id);
+  } else {
+    const res = game.buyUpgrade('player', id);
+    if (res.ok) {
+      loadoutUI.applyUpgrade(id, res.level);
+      loadoutUI.setOre(game.player.ore);
+    }
+  }
+};
+// Mirror the ship's ore + upgrade levels into the shop UI.
+function syncProgression() {
+  const ship = mode === 'network' && net && net.shipId
+    ? net.remoteShips.get(net.shipId)?.ship
+    : game.player;
+  if (!ship) return;
+  loadoutUI.setOre(ship.ore ?? 0);
+  for (const [id, level] of Object.entries(ship.upgrades ?? {})) {
+    if ((loadoutUI.levels[id] ?? 0) !== level) loadoutUI.applyUpgrade(id, level);
+  }
+}
 loadoutUI.show(); // start at the loadout screen
 
 // --- Multiplayer (Milestone 4) ---
@@ -115,6 +139,15 @@ netUI.onJoin = (url) => {
     if (event.name === 'kill') {
       toasts.push({ text: `${event.data.victim} destroyed  +${event.data.score}`, t: 2.6 });
       renderToasts();
+    } else if (event.name === 'upgrade') {
+      // Server confirmed a purchase — sync the shop + toast.
+      loadoutUI.applyUpgrade(event.data.upgrade, event.data.level);
+      syncProgression();
+      toasts.push({ text: `Upgrade: ${event.data.upgrade} → Lv${event.data.level}`, t: 2.6 });
+      renderToasts();
+    } else if (event.name === 'upgrade-failed') {
+      toasts.push({ text: `Upgrade failed: ${event.data}`, t: 2.6 });
+      renderToasts();
     }
   };
   net.onSnapshot = (snap) => {
@@ -122,6 +155,7 @@ netUI.onJoin = (url) => {
     netUI.panel.classList.remove('hidden');
     netUI.renderLeaderboard(snap.ships);
     renderNetAsteroids(snap.asteroids ?? []);
+    syncProgression();
   };
   net.connect();
 };
@@ -136,6 +170,8 @@ const toastBox = document.getElementById('toasts');
 const toasts = [];
 game.onEvent = (name, data) => {
   if (name === 'kill') toasts.push({ text: `${data.victim} destroyed  +${data.score}`, t: 2.6 });
+  else if (name === 'ore') toasts.push({ text: `+${data.amount} ore${data.rich ? ' (rich!)' : ''}`, t: 2.0 });
+  else if (name === 'upgrade') toasts.push({ text: `Upgrade: ${data.upgrade} → Lv${data.level}`, t: 2.6 });
   else if (name === 'game-over') {
     toasts.push({ text: `GAME OVER — score ${data.score} (${data.kills} kills)`, t: 4, big: true });
     loadoutUI.show(); // back to loadout for the next run
@@ -298,6 +334,9 @@ function frame(now) {
       accumulator -= STEP;
     }
   }
+
+  // Keep the upgrade shop in sync with mined ore (local + network).
+  syncProgression();
 
   // Resolve the camera target + HUD source for the active mode.
   let camPos, camVel, camHeading, hudShip, hudGame, boostFraction;

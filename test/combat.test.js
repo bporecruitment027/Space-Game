@@ -284,7 +284,7 @@ test('Game: player bolts damage and kill enemies, awarding score', () => {
   enemy.invulnerableTime = 0;
   game.player.spawn(0, 0, 0, 0);
   // Stub out asteroids (including respawn) so the bolt flight is clean.
-  game.asteroids = { entities: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
+  game.asteroids = { entities: [], destroyedThisTick: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
 
   const events = [];
   game.onEvent = (name, data) => events.push([name, data]);
@@ -312,7 +312,7 @@ test('Game: enemy bolts damage the player and game over ends the run', () => {
   game.player.invulnerableTime = 0;
   // Stub out asteroids (including respawn) so enemy bolts reach the
   // player and the enemy can't die to a ram.
-  game.asteroids = { entities: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
+  game.asteroids = { entities: [], destroyedThisTick: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
 
   // Disable AI fleeing and force the enemy to hold and fire.
   game.ai = new EnemyAI({ fireInterval: 0.1, fleeHealth: 0 });
@@ -344,4 +344,71 @@ test('Game: reset clears bolts, enemies, and score', () => {
   assert.equal(game.state, 'running');
   assert.equal(game.player.health, game.player.maxHealth);
   assert.equal(game.enemies.filter((e) => e.alive).length, 2);
+});
+
+// ---------------------------------------------------------------------------
+// Milestone 5: homing missiles + asteroid mining (ore economy)
+// ---------------------------------------------------------------------------
+
+test('M5: missile homes onto an off-axis target and hits it', () => {
+  const { game } = makeGame(1);
+  // Re-deploy with a missile loadout (makeGame defaults to laser).
+  game.deploy({ hull: 'fighter', weapon: 'missile', modules: [] });
+  const enemy = game.enemies[0];
+  // Enemy ahead and off-axis — a straight-line shot (heading 0 = +Z)
+  // would miss; the missile must curve onto it.
+  enemy.spawn(10, 20, 0, 0);
+  enemy.invulnerableTime = 0;
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 0;
+  game.asteroids = { entities: [], destroyedThisTick: [], update() {}, hit() {}, clear() {}, shipCollisionCandidates() { return []; }, ramDamage: () => 0 };
+
+  let damaged = false;
+  for (let i = 0; i < 360 && !damaged; i++) {
+    game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
+    if (enemy.health < 60) damaged = true;
+  }
+  assert.ok(damaged, 'missile curved onto the off-axis enemy');
+});
+
+test('M5: destroying an asteroid grants ore to the shooter', () => {
+  const { game } = makeGame(1);
+  // Clear the field and park one big rock directly ahead.
+  game.asteroids.clear();
+  const rock = game.asteroids.spawn(false, {
+    position: { x: 0, z: 15 }, radius: 5, velocity: { x: 0, z: 0 },
+  });
+  assert.ok(rock.ore > 0, 'rock carries ore');
+
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 0;
+
+  let mined = false;
+  for (let i = 0; i < 480 && !mined; i++) {
+    game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
+    if (game.player.ore > 0) mined = true;
+  }
+  assert.ok(mined, 'shooting the rock down yields ore');
+  assert.ok(game.player.ore >= rock.ore, 'full rock ore credited to the miner');
+});
+
+test('M5: ore is credited to the killing ship (not a bystander)', () => {
+  const { game } = makeGame(2);
+  game.asteroids.clear();
+  game.asteroids.spawn(false, {
+    position: { x: 0, z: 15 }, radius: 5, velocity: { x: 0, z: 0 },
+  });
+
+  // Player at origin fires; enemies sit far away (not involved).
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 0;
+  game.enemies[0].spawn(100, 100, 0, 0);
+  game.enemies[1].spawn(-100, -100, 0, 0);
+
+  for (let i = 0; i < 480 && game.player.ore === 0; i++) {
+    game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
+  }
+  assert.ok(game.player.ore > 0, 'player mined the rock');
+  assert.equal(game.enemies[0].ore, 0, 'bystanders get no ore');
+  assert.equal(game.enemies[1].ore, 0, 'bystanders get no ore');
 });

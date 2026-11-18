@@ -17,7 +17,7 @@ export class HUD {
     this.root = document.getElementById('hud');
     this.enemyBox = document.getElementById('enemies');
     this.el = {};
-    for (const id of ['score', 'kills', 'speed', 'heading', 'thrust', 'drift', 'energy', 'fps', 'mode', 'boost', 'health']) {
+    for (const id of ['score', 'kills', 'ore', 'speed', 'heading', 'thrust', 'drift', 'energy', 'fps', 'mode', 'boost', 'health']) {
       this.el[id] = document.getElementById(`hud-${id}`);
     }
     this.compass = document.getElementById('hud-compass');
@@ -39,6 +39,7 @@ export class HUD {
     const g = game ?? {};
     this.el.score.textContent = String(g.score ?? 0);
     this.el.kills.textContent = String(g.kills ?? 0);
+    this.el.ore.textContent = String(g.ore ?? 0);
 
     const headingDeg = ((ship.heading * 180) / Math.PI % 360 + 360) % 360;
     this.el.speed.textContent = `${ship.speed.toFixed(1)} m/s`;

@@ -39,15 +39,21 @@ export class Asteroids {
       this._matA = new THREE.MeshStandardMaterial({ color: 0x6b6258, roughness: 0.95, metalness: 0.05, flatShading: true });
       this._matB = new THREE.MeshStandardMaterial({ color: 0x5d544b, roughness: 0.95, metalness: 0.05, flatShading: true });
       this._flashMat = new THREE.MeshStandardMaterial({ color: 0xb8a88c, roughness: 0.8, metalness: 0.05, flatShading: true, emissive: 0x442a11, emissiveIntensity: 0.8 });
+      this._richMat = new THREE.MeshStandardMaterial({ color: 0xc9a24a, roughness: 0.6, metalness: 0.3, flatShading: true, emissive: 0x6b4a14, emissiveIntensity: 0.5 });
     }
+
+    // Asteroids destroyed this tick (ore credit for the Game). Reset
+    // at the start of each update, populated by fragment().
+    this.destroyedThisTick = [];
 
     for (let i = 0; i < count; i++) this.spawn(true);
   }
 
-  _makeMesh(radius) {
+  _makeMesh(radius, rich = false) {
     const geo = new THREE.IcosahedronGeometry(radius, 0);
     wobbleGeometry(geo, 0.72 + Math.random() * 0.55);
-    const mesh = new THREE.Mesh(geo, radius > 4 ? this._matA : this._matB);
+    const mat = rich ? this._richMat : (radius > 4 ? this._matA : this._matB);
+    const mesh = new THREE.Mesh(geo, mat);
     if (!this.headless) this.scene.add(mesh);
     return { geo, mesh };
   }
@@ -68,7 +74,10 @@ export class Asteroids {
     }
 
     const radius = overrides.radius ?? (MIN_RADIUS + Math.random() * 6);
-    const { geo, mesh } = this._makeMesh(radius);
+    // Ore economy (Milestone 5): rocks carry ore; a quarter are rich
+    // and worth 2.5x. Rich rocks render in gold so miners can spot them.
+    const rich = overrides.rich ?? Math.random() < 0.25;
+    const { geo, mesh } = this._makeMesh(radius, rich);
     mesh.position.set(x, 0, z);
 
     const dir = Math.random() * Math.PI * 2;
@@ -85,15 +94,20 @@ export class Asteroids {
       maxDamage: 25 + radius * 6, // mass-proportional HP
       alive: true,
       flashTime: 0,
+      rich,
+      ore: Math.round((4 + Math.random() * 10) * (rich ? 2.5 : 1)),
+      lastHitBy: null, // ship id that dealt the killing blow (ore credit)
     };
     this.entities.push(asteroid);
     return asteroid;
   }
 
-  /** Impact from a bolt: chip damage + visual flash. */
-  hit(asteroid, damage) {
+  /** Impact from a bolt: chip damage + visual flash. Records the shooter
+   *  so the killing blow can be credited with the rock's ore. */
+  hit(asteroid, damage, shooterId = null) {
     asteroid.damage += damage;
     asteroid.flashTime = 0.08;
+    if (shooterId) asteroid.lastHitBy = shooterId;
   }
 
   /** Ram damage to a ship: scaled by its closing speed. */
@@ -103,6 +117,7 @@ export class Asteroids {
   }
 
   update(dt) {
+    this.destroyedThisTick.length = 0;
     for (let i = this.entities.length - 1; i >= 0; i--) {
       const a = this.entities[i];
       if (!a.alive) continue;
@@ -132,6 +147,7 @@ export class Asteroids {
 
       // Fragment when damaged past threshold. Fragments don't subdivide.
       if (a.damage >= a.maxDamage && a.radius > MIN_RADIUS + 0.5) {
+        this.destroyedThisTick.push(a);
         this.fragment(a);
       }
     }
@@ -155,7 +171,12 @@ export class Asteroids {
         position: { x: a.position.x, z: a.position.z },
         radius: Math.max(MIN_RADIUS, a.radius * 0.62),
         damage: a.damage * 0.5,
+        rich: a.rich,
       });
+      // Fragments carry a share of the parent's ore; each child is
+      // worth 60% so mining a big rock down yields more than it held.
+      child.ore = Math.max(1, Math.round(a.ore * 0.6));
+      child.lastHitBy = a.lastHitBy;
       const dir = i === 0 ? 1 : -1;
       child.velocity = {
         x: a.velocity.x + dir * (6 + Math.random() * 6),

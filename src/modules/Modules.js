@@ -1,12 +1,15 @@
 /**
- * Modules — data-driven ship customization (Milestone 3 MVP).
+ * Modules — data-driven ship customization (Milestone 3 MVP, expanded
+ * in Milestone 5).
  *
  * A loadout is pure data: one hull, one weapon, and up to two modules.
  * Every derived stat (mass, inertia, thrust, hull HP, sensor range,
  * fire parameters) comes from these tables, so balancing is a data
  * edit and new ship archetypes need no code.
  *
- * MVP cap per the GDD: 2 weapons, 2 modules.
+ * M5 expands the tables: four hulls (fighter, bulwark, scout, heavy),
+ * three weapons (laser, railgun, homing missile), and three modules
+ * (sensor, armor, engine). Cap per the GDD: 2 modules.
  */
 
 export const HULLS = {
@@ -18,6 +21,7 @@ export const HULLS = {
     maxTorque: 2600,
     maxHealth: 100,
     radius: 2.2,
+    sensorBonus: 0,
     colors: { hull: 0xb8c4d4, dark: 0x2a3342, accent: 0xff8c2e },
   },
   bulwark: {
@@ -28,7 +32,30 @@ export const HULLS = {
     maxTorque: 2400,
     maxHealth: 150,
     radius: 2.6,
+    sensorBonus: 5,
     colors: { hull: 0x94a3b4, dark: 0x333b48, accent: 0x4ad96a },
+  },
+  scout: {
+    name: 'Scout',
+    mass: 800,
+    yawInertia: 1200,
+    maxThrust: 11000,
+    maxTorque: 3200,
+    maxHealth: 70,
+    radius: 1.8,
+    sensorBonus: 30,
+    colors: { hull: 0x7fe3ff, dark: 0x14303a, accent: 0x7fffd4 },
+  },
+  heavy: {
+    name: 'Heavy',
+    mass: 2400,
+    yawInertia: 3600,
+    maxThrust: 7000,
+    maxTorque: 2000,
+    maxHealth: 220,
+    radius: 3.0,
+    sensorBonus: -10,
+    colors: { hull: 0xc9a24a, dark: 0x3a2e14, accent: 0xffd479 },
   },
 };
 
@@ -51,11 +78,24 @@ export const WEAPON_DEFS = {
     color: 0xb06bff,
     scale: 1.8,
   },
+  missile: {
+    name: 'Missile',
+    damage: 34,
+    speed: 95,
+    life: 3.0,
+    cooldown: 1.1,
+    color: 0xffd479,
+    scale: 1.3,
+    homing: true,
+    turnRate: 3.2, // rad/s max steering
+    seekRange: 220, // m — nearest-enemy lock range when no explicit target
+  },
 };
 
 export const MODULE_DEFS = {
   sensor: { name: 'Sensor Array', sensorRange: 70 },
   armor: { name: 'Reinforced Armor', healthMultiplier: 1.5 },
+  engine: { name: 'Engine Tuning', thrustBonus: 0.25 },
 };
 
 export const MAX_MODULES = 2;
@@ -117,7 +157,7 @@ export function deriveStats(loadout) {
     maxTorque: hull.maxTorque,
     maxHealth: Math.round(hull.maxHealth),
     radius: hull.radius,
-    sensorRange: BASE_SENSOR_RANGE,
+    sensorRange: BASE_SENSOR_RANGE + (hull.sensorBonus ?? 0),
     colors: hull.colors,
     fire: { ...weapon },
   };
@@ -126,6 +166,7 @@ export function deriveStats(loadout) {
     const m = MODULE_DEFS[id];
     if (m.sensorRange) stats.sensorRange += m.sensorRange;
     if (m.healthMultiplier) stats.maxHealth = Math.round(stats.maxHealth * m.healthMultiplier);
+    if (m.thrustBonus) stats.maxThrust = Math.round(stats.maxThrust * (1 + m.thrustBonus));
   }
 
   return stats;

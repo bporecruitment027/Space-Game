@@ -44,6 +44,7 @@ export class Ship {
     }
 
     this.maxHealth = maxHealth;
+    this.baseMaxHealth = maxHealth; // pre-upgrade HP (for re-applying upgrades)
     this.health = maxHealth;
     this.radius = radius;
     this.alive = true;
@@ -52,10 +53,17 @@ export class Ship {
     this.ramCooldown = 0; // asteroid-impact damage cooldown
     this.score = 0; // kills credited to this ship (0 for AI)
     this.kills = 0;
+    this.ore = 0; // mined resource, spent on upgrades (Milestone 5)
+    this.upgrades = {}; // upgrade id → level (Milestone 5)
+    this.damageMult = 1; // upgrade multiplier on weapon damage
+    this.thrustMult = 1; // upgrade multiplier on thrust
+    this.regen = 0; // HP/s while undamaged (upgrade)
+    this.lastDamageTime = Infinity; // seconds since last hit (for regen)
 
     // Weapon + sensor stats come from the ship's loadout (Milestone 3).
     this.weapon = weapon ?? WEAPON_DEFS.laser;
     this.sensorRange = sensorRange ?? BASE_SENSOR_RANGE;
+    this.baseSensorRange = this.sensorRange; // pre-upgrade range
   }
 
   get position() { return this.physics.position; }
@@ -79,6 +87,7 @@ export class Ship {
   takeDamage(amount) {
     if (!this.alive || this.invulnerableTime > 0) return false;
     this.health -= amount;
+    this.lastDamageTime = 0;
     this.flashDamage();
     if (this.health <= 0) {
       this.health = 0;
@@ -95,6 +104,13 @@ export class Ship {
     this.invulnerableTime = Math.max(0, this.invulnerableTime - dt);
     this.fireCooldown = Math.max(0, this.fireCooldown - dt);
     this.ramCooldown = Math.max(0, this.ramCooldown - dt);
+    // Auto-repair: heal while undamaged for a few seconds (upgrade).
+    if (this.regen > 0 && this.health > 0 && this.health < this.maxHealth) {
+      this.lastDamageTime += dt;
+      if (this.lastDamageTime > 3) {
+        this.health = Math.min(this.maxHealth, this.health + this.regen * dt);
+      }
+    }
     this.physics.update(dt, input);
     this.syncMesh(dt);
     // Blink while invulnerable so the player can see the grace period.

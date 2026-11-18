@@ -86,6 +86,9 @@ export class NetworkClient {
       case 'event':
         this.onEvent(msg.event);
         break;
+      case 'upgrade-failed':
+        this.onEvent({ name: 'upgrade-failed', data: msg.reason });
+        break;
       case 'kick':
         if (this.ws) this.ws.close();
         break;
@@ -101,6 +104,17 @@ export class NetworkClient {
   sendInput(command) {
     if (!this.connected || !this.shipId) return;
     this.ws.send(JSON.stringify({ type: 'input', shipId: this.shipId, command }));
+  }
+
+  /**
+   * Request an upgrade purchase from the authoritative server.
+   * The server validates ore and applies the effect; the next
+   * snapshot reflects the result.
+   * @param {string} upgradeId
+   */
+  sendUpgrade(upgradeId) {
+    if (!this.connected || !this.shipId) return;
+    this.ws.send(JSON.stringify({ type: 'upgrade', shipId: this.shipId, upgradeId }));
   }
 
   /**
@@ -149,6 +163,8 @@ export class NetworkClient {
       entry.ship.alive = s.alive;
       entry.ship.score = s.score;
       entry.ship.kills = s.kills;
+      entry.ship.ore = s.ore ?? 0;
+      entry.ship.upgrades = { ...(s.upgrades ?? {}) };
 
       entry.mesh.visible = s.alive;
       entry.mesh.position.set(s.x, 0, s.z);

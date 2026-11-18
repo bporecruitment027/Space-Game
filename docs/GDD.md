@@ -1,10 +1,10 @@
 # Space Combat — Game Design Document
 
-**Status:** Milestone 4 (Multiplayer) — authoritative server, fixed-tick sim, and networked client delivered.
+**Status:** Milestone 5 (Content Expansion) — expanded loadouts, homing missiles, asteroid mining economy, and upgrades delivered.
 **Last updated:** 2026-11-18
 
 This document is the living design spec for the roadmap. Each milestone
-below maps to the development roadmap; Milestones 1–4 are implemented
+below maps to the development roadmap; Milestones 1–5 are implemented
 in this branch. Later milestones extend it without changing the core
 flight model.
 
@@ -156,8 +156,9 @@ the loadout screen with the score shown. The run loop is driven by
 - **M4 — Multiplayer:** authoritative Node.js server (ws), fixed-tick
   simulation, clients send inputs only; per-ship score/kill attribution
   and a live kill leaderboard. ✅
-- **M5 — Content Expansion:** more hulls/weapons (laser, railgun,
-  missile), asteroid mining + resource economy, upgrades.
+- **M5 — Content Expansion:** four hulls (fighter, bulwark, scout,
+  heavy), homing missile weapon, engine module; asteroid mining with an
+  ore economy and a repeatable upgrade shop. ✅
 - **M6 — Optimization & Deployment:** LOD/instancing, KTX2/Draco assets,
   PWA + optional Capacitor/TWA wrappers, 60 fps desktop / 30 fps mobile.
 - **M7 — Release & Post-Release:** Playwright tests, Sentry telemetry,
@@ -208,6 +209,24 @@ the loadout screen with the score shown. The run loop is driven by
       after a short delay; disconnects remove the ship cleanly.
 - [x] Networking unit tests pass (`npm test` — 47 tests); live
       end-to-end check via `test/e2e-check.mjs` against a running server.
+
+**Milestone 5**
+- [x] Expanded loadouts: four hulls (fighter, bulwark, scout, heavy),
+      three weapons (laser, railgun, homing missile), three modules
+      (sensor, armor, engine) — all data-driven in `Modules.js`.
+- [x] Homing missiles: pooled projectiles steer toward a locked/nearest
+      enemy at a capped turn rate; pure simulation (server-safe).
+- [x] Asteroid mining: rocks carry ore (25% are rich, worth 2.5×);
+      destroying a rock credits the killing ship; fragments carry ore.
+- [x] Ore economy: per-ship `ore` counter, broadcast in snapshots,
+      shown in the HUD and loadout shop.
+- [x] Upgrades: five repeatable upgrades (damage, hull, thrust, sensor,
+      repair) bought with ore; effects scale ship stats; progression
+      persists across loadout deploys.
+- [x] Upgrade shop in the loadout screen; authoritative server applies
+      purchases (`upgrade` message) and rejects insufficient ore.
+- [x] Content + economy unit tests pass (`npm test` — 72 tests); live
+      M5 end-to-end check via `test/e2e-m5-check.mjs`.
 
 ## 10. Known risks & mitigations
 

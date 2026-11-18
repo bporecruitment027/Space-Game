@@ -44,6 +44,10 @@ export class Projectiles {
         damage: 0,
         life: 0,
         scale: 1,
+        homing: false,
+        turnRate: 0,
+        seekRange: 0,
+        targetId: null,
       });
     }
   }
@@ -54,7 +58,7 @@ export class Projectiles {
    * @param {object} opts        { speed, damage, life, color, scale }
    * @returns {boolean} false if the pool is exhausted.
    */
-  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff, scale = 1 } = {}) {
+  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff, scale = 1, homing = false, turnRate = 0, seekRange = 0, targetId = null } = {}) {
     const bolt = this.pool.find((b) => !b.active);
     if (!bolt) return false;
 
@@ -69,6 +73,10 @@ export class Projectiles {
     bolt.damage = damage;
     bolt.life = life;
     bolt.scale = scale;
+    bolt.homing = homing;
+    bolt.turnRate = turnRate;
+    bolt.seekRange = seekRange;
+    bolt.targetId = targetId;
     if (!this.headless) {
       bolt.mesh.material.color.setHex(color);
       bolt.mesh.scale.setScalar(scale);
@@ -92,6 +100,30 @@ export class Projectiles {
     for (let i = this.active.length - 1; i >= 0; i--) {
       const bolt = this.active[i];
       bolt.life -= dt;
+
+      // Homing missiles (Milestone 5): steer toward the locked target,
+      // falling back to the nearest enemy within seek range. Pure
+      // simulation — no rendering, safe for the authoritative server.
+      if (bolt.homing) {
+        const target = this._findTarget(bolt, ships);
+        if (target) {
+          const dx = target.position.x - bolt.position.x;
+          const dz = target.position.z - bolt.position.z;
+          const dist = Math.hypot(dx, dz) || 1;
+          const desired = { x: dx / dist, z: dz / dist };
+          const speed = Math.hypot(bolt.velocity.x, bolt.velocity.z) || 1;
+          const cur = { x: bolt.velocity.x / speed, z: bolt.velocity.z / speed };
+          // Angle between current and desired heading (XZ plane).
+          const cross = cur.x * desired.z - cur.z * desired.x; // sin of angle
+          const dot = cur.x * desired.x + cur.z * desired.z;     // cos of angle
+          const angle = Math.atan2(cross, dot);
+          const turn = Math.max(-bolt.turnRate * dt, Math.min(bolt.turnRate * dt, angle));
+          const cos = Math.cos(turn), sin = Math.sin(turn);
+          bolt.velocity.x = (cur.x * cos - cur.z * sin) * speed;
+          bolt.velocity.z = (cur.x * sin + cur.z * cos) * speed;
+        }
+      }
+
       bolt.position.x += bolt.velocity.x * dt;
       bolt.position.z += bolt.velocity.z * dt;
       if (!this.headless) bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
@@ -138,6 +170,27 @@ export class Projectiles {
         this.pool.push(this.pool.shift()); // rotate pool
       }
     }
+  }
+
+  /**
+   * Resolve a homing bolt's target: the locked ship id if still alive,
+   * otherwise the nearest alive non-owner ship within seek range.
+   * @param {object} bolt  Bolt with targetId/seekRange.
+   * @param {Array} ships  All ships (alive checked here).
+   */
+  _findTarget(bolt, ships) {
+    if (bolt.targetId) {
+      const locked = ships.find((s) => s.id === bolt.targetId && s.alive);
+      if (locked) return locked;
+    }
+    let best = null;
+    let bestD = bolt.seekRange > 0 ? bolt.seekRange : Infinity;
+    for (const s of ships) {
+      if (!s.alive || s.id === bolt.ownerId) continue;
+      const d = Math.hypot(s.position.x - bolt.position.x, s.position.z - bolt.position.z);
+      if (d < bestD) { bestD = d; best = s; }
+    }
+    return best;
   }
 
   /** Deactivate everything (used on game reset). */

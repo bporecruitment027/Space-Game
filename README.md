@@ -4,11 +4,12 @@ Browser-first realistic space combat game — overhead combat, Newtonian
 (zero-gravity) flight physics, modular ships, and (from Milestone 4)
 authoritative multiplayer. Built with Three.js (WebGL2).
 
-**Current status: Milestone 4 — Multiplayer.** Skirmish mode with
-data-driven loadouts (hull + weapon + modules), laser/railgun combat,
-sensor-based fog of war with a live radar, and an authoritative
-multiplayer server (fixed-tick simulation, clients send inputs only).
-See [`docs/GDD.md`](docs/GDD.md) for the full design spec and milestone
+**Current status: Milestone 5 — Content Expansion.** Skirmish mode with
+data-driven loadouts (four hulls, three weapons including homing
+missiles, three modules), laser/railgun/missile combat, sensor-based fog
+of war with a live radar, an authoritative multiplayer server, and an
+asteroid-mining ore economy with a repeatable upgrade shop. See
+[`docs/GDD.md`](docs/GDD.md) for the full design spec and milestone
 plan.
 
 ## Run it
@@ -18,7 +19,10 @@ npm start          # serves the game on http://localhost:8000
 npm run server     # starts the authoritative multiplayer server (ws://localhost:8080)
 ```
 
-Open the game, pick a loadout on the deploy screen, and fight. To play
+Open the game, pick a loadout on the deploy screen, and fight. Shoot
+asteroids down to mine **ore**, then spend it on upgrades in the loadout
+shop (damage, hull, thrust, sensor, repair — repeatable levels that
+persist across deploys). To play
 multiplayer, click **MULTIPLAYER** on the controls panel, enter the
 server URL (default `ws://<host>:8080`), and join — the server owns all
 physics; your client sends input and renders the broadcast state. A live
@@ -42,9 +46,10 @@ kill leaderboard appears in the corner while connected.
 ## Test
 
 ```bash
-npm test           # physics + combat + modules/sensors + networking unit tests
+npm test           # physics + combat + modules + upgrades + networking tests
 npm run smoke      # headless boot of the full module graph
-node test/e2e-check.mjs   # live end-to-end check (needs a running server)
+node test/e2e-check.mjs    # live end-to-end check (needs a running server)
+node test/e2e-m5-check.mjs # live M5 check: mine ore → buy upgrade
 ```
 
 ## Layout
@@ -61,7 +66,7 @@ src/
   world/              Starfield, reference grid, dynamic asteroids
   combat/             EnemyAI + pooled projectile system
   entities/           Ship (physics + health + weapon + mesh)
-  modules/            Data-driven loadout tables (hulls/weapons/modules)
+  modules/            Data-driven loadout tables + upgrade defs
   systems/            Sensors: contact tracking + fog of war
   camera/             Overhead/chase follow camera
   net/                NetworkClient: snapshot rendering + input sending
@@ -77,6 +82,6 @@ vendor/               Vendored Three.js build (demo runs offline)
 
 M1 Concept & prototype ✅ → M2 Vertical slice (enemy, weapons, asteroid
 collisions) ✅ → M3 MVP (loadouts, sensors, skirmish) ✅ → M4 Multiplayer
-(authoritative server, networked client) ✅ → M5 Content (mining,
-economy, more ships) → M6 Optimization & PWA → M7 Release. Details in
-`docs/GDD.md` §8.
+(authoritative server, networked client) ✅ → M5 Content (four hulls,
+homing missiles, asteroid mining + ore economy, upgrades) ✅ → M6
+Optimization & PWA → M7 Release. Details in `docs/GDD.md` §8.

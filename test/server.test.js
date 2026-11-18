@@ -221,3 +221,71 @@ test('Server: snapshot contains all required fields', async () => {
   ws.close();
   server.stop();
 });
+
+// ---------------------------------------------------------------------------
+// Milestone 5: ore + upgrades over the authoritative server
+// ---------------------------------------------------------------------------
+
+test('M5: snapshot includes ore and upgrade levels', async () => {
+  const { server, port } = await startServer();
+  const ws = await connect(port);
+
+  ws.send(JSON.stringify({ type: 'join', loadout: { hull: 'fighter', weapon: 'laser', modules: [] } }));
+  const welcome = await nextMessage(ws, (m) => m.type === 'welcome');
+  const player = welcome.snapshot.ships.find((s) => s.id === welcome.shipId);
+  assert.equal(typeof player.ore, 'number');
+  assert.deepEqual(player.upgrades, {}, 'starts with no upgrades');
+
+  ws.close();
+  server.stop();
+});
+
+test('M5: server applies an upgrade purchase and deducts ore', async () => {
+  const { server, port } = await startServer();
+  const ws = await connect(port);
+
+  ws.send(JSON.stringify({ type: 'join', loadout: { hull: 'fighter', weapon: 'laser', modules: [] } }));
+  const welcome = await nextMessage(ws, (m) => m.type === 'welcome');
+  const shipId = welcome.shipId;
+
+  // Grant the player mining wealth, then buy a damage upgrade.
+  const ship = server.game.players.find((p) => p.id === shipId);
+  ship.ore = 100;
+  const before = ship.damageMult;
+
+  ws.send(JSON.stringify({ type: 'upgrade', shipId, upgradeId: 'damage' }));
+
+  // Wait for a snapshot reflecting the purchase.
+  let applied = false;
+  for (let i = 0; i < 10 && !applied; i++) {
+    const snap = await nextMessage(ws, (m) => m.type === 'snapshot', 1500).catch(() => null);
+    if (!snap) break;
+    const me = snap.snapshot.ships.find((s) => s.id === shipId);
+    if (me.upgrades.damage === 1) applied = true;
+  }
+  assert.ok(applied, 'upgrade applied and broadcast');
+  assert.ok(ship.damageMult > before, 'server-side damage multiplier increased');
+  assert.ok(ship.ore < 100, 'ore deducted on the server');
+
+  ws.close();
+  server.stop();
+});
+
+test('M5: server rejects an upgrade purchase without enough ore', async () => {
+  const { server, port } = await startServer();
+  const ws = await connect(port);
+
+  ws.send(JSON.stringify({ type: 'join', loadout: { hull: 'fighter', weapon: 'laser', modules: [] } }));
+  const welcome = await nextMessage(ws, (m) => m.type === 'welcome');
+  const shipId = welcome.shipId;
+  const ship = server.game.players.find((p) => p.id === shipId);
+  ship.ore = 1; // less than any upgrade
+
+  ws.send(JSON.stringify({ type: 'upgrade', shipId, upgradeId: 'damage' }));
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(ship.upgrades.damage ?? 0, 0, 'upgrade not applied');
+  assert.equal(ship.ore, 1, 'ore unchanged');
+
+  ws.close();
+  server.stop();
+});
