@@ -19,8 +19,9 @@ plan.
 ## Run it
 
 ```bash
-npm start          # serves the game on http://localhost:8000
-npm run server     # starts the authoritative multiplayer server (ws://localhost:8080)
+npm run deploy     # one command: demo + multiplayer server (http://localhost:8000, ws://localhost:8137)
+npm start          # just the single-player demo (http://localhost:8000)
+npm run server     # just the authoritative multiplayer server (ws://localhost:8080)
 ```
 
 Open the game, pick a loadout on the deploy screen, and fight. Shoot
@@ -46,6 +47,40 @@ kill leaderboard appears in the corner while connected.
 > Watch the drift-angle readout and brake before the rocks — and
 > ram-speed damage means flying into asteroids hurts you. Enemies
 > outside your sensor range appear as fading ghosts on the radar.
+
+## Deploy
+
+The game is a **static site** — no build step, no bundler. `index.html`
+plus `src/`, `vendor/`, and `styles.css` can be dropped onto any static
+host (or opened via any static file server) and it runs.
+
+**Single-player (all features):** serve the repo root over HTTP. The
+built-in server disables caching so reloads always pick up fresh code:
+
+```bash
+npm start                        # or: node server/staticServer.js [port]
+PORT=3000 npm start              # custom port
+```
+
+**Multiplayer:** the authoritative server is a small Node process with
+one dependency (`ws`). It needs a reachable WebSocket port; start it
+next to the static host and point clients at its URL:
+
+```bash
+npm run server                   # ws://localhost:8080 by default
+PORT=9000 TICK_RATE=30 MAX_PLAYERS=6 ENEMY_COUNT=4 npm run server
+```
+
+| Env | Default | Meaning |
+|---|---|---|
+| `PORT` | `8000` | static demo port (`npm start`) |
+| `WS_PORT` | `8137` | multiplayer WebSocket port (`npm run deploy`) |
+| `TICK_RATE` | `30` | server simulation rate (Hz) |
+| `MAX_PLAYERS` | `6` | max concurrent players |
+| `ENEMY_COUNT` | `4` | enemy ships in the shared world |
+
+`npm run deploy` runs both together with prefixed logs — the simplest
+local or single-machine deploy.
 
 ## Test
 

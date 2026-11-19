@@ -9,7 +9,7 @@
  * no-store on every response makes reloads always pick up fresh
  * assets, with correct MIME types for ES module imports.
  *
- * Usage: node server/staticServer.js [port]   (default 8000)
+ * Usage: node server/staticServer.js [port]   (default 8000; PORT env)
  */
 
 import http from 'node:http';
@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, '..');
-const PORT = Number(process.argv[2]) || 8000;
+const PORT = Number(process.argv[2]) || Number(process.env.PORT) || 8000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',

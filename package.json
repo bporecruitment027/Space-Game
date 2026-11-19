@@ -6,8 +6,9 @@
   "scripts": {
     "test": "node --test test/physics.test.js test/combat.test.js test/modules.test.js test/upgrades.test.js test/server.test.js",
     "smoke": "node test/smoke.mjs",
-    "start": "python3 -m http.server 8000 --bind 0.0.0.0",
-    "server": "node server/index.js"
+    "start": "node server/staticServer.js",
+    "server": "node server/index.js",
+    "deploy": "node server/launcher.js"
   },
   "repository": {
     "type": "git",
