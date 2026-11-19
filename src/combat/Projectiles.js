@@ -35,8 +35,19 @@ export class Projectiles {
         mesh.visible = false;
         scene.add(mesh);
       }
+      // Missile exhaust trail (only used for homing bolts).
+      const trailMat = new THREE.MeshBasicMaterial({
+        color: 0xffd479, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      });
+      const trail = this.headless ? null : new THREE.Mesh(
+        new THREE.PlaneGeometry(0.5, 2.4), trailMat,
+      );
+      if (trail) { trail.visible = false; scene.add(trail); }
+
       this.pool.push({
         mesh,
+        trail,
         active: false,
         ownerId: null,
         position: { x: 0, z: 0 },
@@ -82,6 +93,10 @@ export class Projectiles {
       bolt.mesh.scale.setScalar(scale);
       bolt.mesh.visible = true;
       bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+      if (bolt.trail) {
+        bolt.trail.visible = homing;
+        bolt.trail.material.color.setHex(color);
+      }
     }
     this.active.push(bolt);
     return true;
@@ -126,7 +141,21 @@ export class Projectiles {
 
       bolt.position.x += bolt.velocity.x * dt;
       bolt.position.z += bolt.velocity.z * dt;
-      if (!this.headless) bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+      if (!this.headless) {
+        bolt.mesh.position.set(bolt.position.x, 0, bolt.position.z);
+        // Missile exhaust trail: stretched opposite the velocity.
+        if (bolt.trail && bolt.trail.visible) {
+          const speed = Math.hypot(bolt.velocity.x, bolt.velocity.z) || 1;
+          const ux = bolt.velocity.x / speed;
+          const uz = bolt.velocity.z / speed;
+          bolt.trail.position.set(
+            bolt.position.x - ux * 1.4, 0,
+            bolt.position.z - uz * 1.4,
+          );
+          bolt.trail.rotation.y = Math.atan2(uz, ux);
+          bolt.trail.scale.set(1, 1, 1 + speed * 0.02);
+        }
+      }
 
       let dead = bolt.life <= 0;
 
@@ -165,6 +194,7 @@ export class Projectiles {
         if (!this.headless) {
           bolt.mesh.visible = false;
           bolt.mesh.scale.setScalar(1); // reset for the next pooled reuse
+          if (bolt.trail) bolt.trail.visible = false;
         }
         this.active.splice(i, 1);
         this.pool.push(this.pool.shift()); // rotate pool
@@ -197,7 +227,10 @@ export class Projectiles {
   clear() {
     for (const bolt of this.active) {
       bolt.active = false;
-      if (!this.headless) bolt.mesh.visible = false;
+      if (!this.headless) {
+        bolt.mesh.visible = false;
+        if (bolt.trail) bolt.trail.visible = false;
+      }
     }
     this.active.length = 0;
   }

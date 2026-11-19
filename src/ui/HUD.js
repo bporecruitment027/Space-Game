@@ -12,6 +12,7 @@
 
 export class HUD {
   #frame = 0;
+  #sweep = 0; // LiDAR scan sweep angle (radians)
 
   constructor() {
     this.root = document.getElementById('hud');
@@ -37,6 +38,7 @@ export class HUD {
     if (this.#frame % 3 !== 0) return;
 
     const g = game ?? {};
+    this.#sweep += 0.05; // steady LiDAR sweep
     this.el.score.textContent = String(g.score ?? 0);
     this.el.kills.textContent = String(g.kills ?? 0);
     this.el.ore.textContent = String(g.ore ?? 0);
@@ -100,7 +102,27 @@ export class HUD {
     ctx.lineTo(c + nose.x * 8, c - nose.z * 8);
     ctx.stroke();
 
-    // Contacts: live = solid red, ghost = fading outline.
+    // LiDAR scan sweep: a rotating wedge that "paints" contacts.
+    ctx.save();
+    ctx.translate(c, c);
+    const grad = ctx.createLinearGradient(0, 0, rangePx, 0);
+    grad.addColorStop(0, 'rgba(127,227,255,0.28)');
+    grad.addColorStop(1, 'rgba(127,227,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.arc(0, 0, rangePx, this.#sweep, this.#sweep + 0.5);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(127,227,255,0.5)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(Math.cos(this.#sweep) * rangePx, Math.sin(this.#sweep) * rangePx);
+    ctx.stroke();
+    ctx.restore();
+
+    // Contacts: tracked = LiDAR lock bracket, ghost = fading ping ring.
     for (const contact of g.radar ?? []) {
       const dx = (contact.position.x - ship.position.x) * scale;
       const dz = (contact.position.z - ship.position.z) * scale;
@@ -108,16 +130,30 @@ export class HUD {
       const x = c + dx;
       const y = c - dz;
       if (contact.tracked) {
+        // Lock bracket: a small diamond with crosshair lines.
+        ctx.strokeStyle = '#ff3b3b';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 5, y); ctx.lineTo(x - 2, y);
+        ctx.moveTo(x + 2, y); ctx.lineTo(x + 5, y);
+        ctx.moveTo(x, y - 5); ctx.lineTo(x, y - 2);
+        ctx.moveTo(x, y + 2); ctx.lineTo(x, y + 5);
+        ctx.stroke();
         ctx.fillStyle = '#ff3b3b';
         ctx.beginPath();
-        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
+        ctx.arc(x, y, 2.5, 0, Math.PI * 2);
         ctx.fill();
       } else {
+        // Ghost ping: fading hollow ring.
         ctx.strokeStyle = `rgba(255,107,107,${contact.strength})`;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.arc(x, y, 3.5, 0, Math.PI * 2);
         ctx.stroke();
+        ctx.fillStyle = `rgba(255,107,107,${contact.strength * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(x, y, 1.5, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
   }

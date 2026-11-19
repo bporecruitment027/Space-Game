@@ -19,6 +19,7 @@
 import * as THREE from 'three';
 import { KeyboardInput } from './input/KeyboardInput.js';
 import { createEnvironment } from './world/Environment.js';
+import { Effects } from './world/Effects.js';
 import { FollowCamera } from './camera/FollowCamera.js';
 import { HUD } from './ui/HUD.js';
 import { LoadoutUI } from './ui/LoadoutUI.js';
@@ -60,7 +61,8 @@ rim.position.set(-100, 40, -120);
 scene.add(rim);
 
 // --- World + game ---
-createEnvironment(scene);
+const environment = createEnvironment(scene);
+const effects = new Effects(scene);
 
 const input = new KeyboardInput();
 const followCam = new FollowCamera(camera);
@@ -109,6 +111,7 @@ let netAsteroids = new Map(); // key "x,z" → mesh, from server snapshots
 
 netUI.onJoin = (url) => {
   // Tear the local sim out of the scene so only server-owned meshes render.
+  effects.clear();
   for (const p of game.players) if (p.mesh) scene.remove(p.mesh);
   for (const e of game.enemies) if (e.mesh) scene.remove(e.mesh);
   if (game.asteroids) game.asteroids.clear();
@@ -132,6 +135,7 @@ netUI.onJoin = (url) => {
     netUI.renderLeaderboard([]);
     netAsteroids.forEach((m) => scene.remove(m));
     netAsteroids.clear();
+    effects.clear();
     game.reset(); // restore solo play
     loadoutUI.show();
   };
@@ -157,6 +161,10 @@ netUI.onJoin = (url) => {
     renderNetAsteroids(snap.asteroids ?? []);
     syncProgression();
   };
+  // Remote ships breaking apart — explosion at their last position.
+  net.onDestroy = (x, z, isPlayer) => {
+    effects.explode(x, z, { color: isPlayer ? 0xff4444 : 0xff8c4a, scale: isPlayer ? 2.0 : 1.4 });
+  };
   net.connect();
 };
 
@@ -169,8 +177,14 @@ document.getElementById('btn-multiplayer').addEventListener('click', () => {
 const toastBox = document.getElementById('toasts');
 const toasts = [];
 game.onEvent = (name, data) => {
-  if (name === 'kill') toasts.push({ text: `${data.victim} destroyed  +${data.score}`, t: 2.6 });
-  else if (name === 'ore') toasts.push({ text: `+${data.amount} ore${data.rich ? ' (rich!)' : ''}`, t: 2.0 });
+  if (name === 'kill') {
+    toasts.push({ text: `${data.victim} destroyed  +${data.score}`, t: 2.6 });
+    if (typeof data.x === 'number') effects.explode(data.x, data.z, { color: 0xff8c4a, scale: 1.4 });
+  } else if (name === 'player-killed') {
+    if (typeof data.x === 'number') effects.explode(data.x, data.z, { color: 0xff4444, scale: 2.0 });
+  } else if (name === 'asteroid-destroyed') {
+    effects.explode(data.x, data.z, { color: data.rich ? 0xffd479 : 0xb8a88c, scale: data.rich ? 1.2 : 0.8, light: false });
+  } else if (name === 'ore') toasts.push({ text: `+${data.amount} ore${data.rich ? ' (rich!)' : ''}`, t: 2.0 });
   else if (name === 'upgrade') toasts.push({ text: `Upgrade: ${data.upgrade} → Lv${data.level}`, t: 2.6 });
   else if (name === 'game-over') {
     toasts.push({ text: `GAME OVER — score ${data.score} (${data.kills} kills)`, t: 4, big: true });
@@ -319,7 +333,7 @@ function frame(now) {
 
   // Edge-triggered actions
   for (const ev of input.drainEvents()) {
-    if (ev === 'reset' && mode === 'local') game.reset();
+    if (ev === 'reset' && mode === 'local') { effects.clear(); game.reset(); }
     if (ev === 'camera') followCam.toggleMode();
     if (ev === 'pause') {
       paused = !paused;
@@ -337,6 +351,10 @@ function frame(now) {
 
   // Keep the upgrade shop in sync with mined ore (local + network).
   syncProgression();
+
+  // Advance environment (nebula drift, dust) + explosion effects.
+  environment.update(dt);
+  effects.update(dt);
 
   // Resolve the camera target + HUD source for the active mode.
   let camPos, camVel, camHeading, hudShip, hudGame, boostFraction;

@@ -50,6 +50,7 @@ export class Game {
       id: 'player', isPlayer: true,
       physics: stats,
       meshOptions: {
+        hull: stats.hull,
         hullColor: stats.colors.hull,
         darkColor: stats.colors.dark,
         accentColor: stats.colors.accent,
@@ -87,6 +88,7 @@ export class Game {
       id: 'player', isPlayer: true,
       physics: stats,
       meshOptions: {
+        hull: stats.hull,
         hullColor: stats.colors.hull,
         darkColor: stats.colors.dark,
         accentColor: stats.colors.accent,
@@ -143,7 +145,7 @@ export class Game {
       const ship = new Ship({
         id: `enemy-${i}`, isPlayer: false,
         physics: ENEMY_TUNING,
-        meshOptions: { hullColor: 0x8f3a3a, darkColor: 0x2a1414, accentColor: 0xff3b3b },
+        meshOptions: { hull: 'heavy', hullColor: 0x8f3a3a, darkColor: 0x2a1414, accentColor: 0xff3b3b },
         maxHealth: 60, radius: 2.0,
         headless: this.headless,
       });
@@ -202,6 +204,8 @@ export class Game {
         miner.ore += rock.ore;
         this.emit('ore', { by: miner.id, amount: rock.ore, rich: rock.rich });
       }
+      // Let the render layer react to the destruction (explosion).
+      this.emit('asteroid-destroyed', { x: rock.position.x, z: rock.position.z, rich: rock.rich });
     }
 
     // 6. Sensor scan (fog of war) — each player gets their own scan.
@@ -295,10 +299,10 @@ export class Game {
           shooter.score += 100;
           shooter.kills += 1;
         }
-        this.emit('kill', { by: bolt.ownerId, victim: target.id, score: shooter ? shooter.score : 0 });
+        this.emit('kill', { by: bolt.ownerId, victim: target.id, score: shooter ? shooter.score : 0, x: target.position.x, z: target.position.z });
         this._respawnEnemy(target);
       } else if (killed) {
-        this.emit('player-killed', { victim: target.id });
+        this.emit('player-killed', { victim: target.id, x: target.position.x, z: target.position.z });
       } else {
         this.emit('hit', { target: target.id });
       }
@@ -367,16 +371,16 @@ export class Game {
           // Credit ramming kills.
           if (killedA && b.isPlayer) {
             b.score += 100; b.kills += 1;
-            this.emit('kill', { by: b.id, victim: a.id, score: b.score });
+            this.emit('kill', { by: b.id, victim: a.id, score: b.score, x: a.position.x, z: a.position.z });
             if (!a.isPlayer) this._respawnEnemy(a);
           }
           if (killedB && a.isPlayer) {
             a.score += 100; a.kills += 1;
-            this.emit('kill', { by: a.id, victim: b.id, score: a.score });
+            this.emit('kill', { by: a.id, victim: b.id, score: a.score, x: b.position.x, z: b.position.z });
             if (!b.isPlayer) this._respawnEnemy(b);
           }
-          if (killedA && a.isPlayer) this.emit('player-killed', { victim: a.id });
-          if (killedB && b.isPlayer) this.emit('player-killed', { victim: b.id });
+          if (killedA && a.isPlayer) this.emit('player-killed', { victim: a.id, x: a.position.x, z: a.position.z });
+          if (killedB && b.isPlayer) this.emit('player-killed', { victim: b.id, x: b.position.x, z: b.position.z });
         }
       }
     }
@@ -415,6 +419,7 @@ export class Game {
       id, isPlayer: true,
       physics: stats,
       meshOptions: {
+        hull: stats.hull,
         hullColor: stats.colors.hull,
         darkColor: stats.colors.dark,
         accentColor: stats.colors.accent,

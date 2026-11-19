@@ -50,6 +50,8 @@ export class NetworkClient {
     this.onDisconnect = () => {};
     this.onEvent = () => {};
     this.onSnapshot = () => {};
+    // Called when a remote ship is destroyed (for explosion effects).
+    this.onDestroy = () => {};
   }
 
   /** Open the WebSocket and request to join. */
@@ -166,9 +168,13 @@ export class NetworkClient {
       entry.ship.ore = s.ore ?? 0;
       entry.ship.upgrades = { ...(s.upgrades ?? {}) };
 
+      // Detect destruction: alive true → false spawns an explosion.
+      const wasAlive = entry.ship.alive;
+      entry.ship.alive = s.alive;
       entry.mesh.visible = s.alive;
       entry.mesh.position.set(s.x, 0, s.z);
       entry.mesh.rotation.y = s.heading;
+      if (wasAlive && !s.alive) this.onDestroy(s.x, s.z, s.isPlayer);
     }
 
     // Remove ships no longer in the snapshot.
