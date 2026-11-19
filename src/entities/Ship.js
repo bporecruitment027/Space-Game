@@ -25,7 +25,7 @@ export class Ship {
    * @param {number} [opts.sensorRange] Sensor detection radius in metres.
    * @param {boolean} [opts.headless]   If true, skip mesh creation (server).
    */
-  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2, weapon, sensorRange, headless = false }) {
+  constructor({ id, isPlayer, physics, meshOptions, maxHealth = 100, radius = 2.2, weapon, sensorRange, interceptRange = 0, headless = false }) {
     this.id = id;
     this.isPlayer = isPlayer;
     this.physics = new ShipPhysics(physics);
@@ -64,6 +64,12 @@ export class Ship {
     this.weapon = weapon ?? WEAPON_DEFS.laser;
     this.sensorRange = sensorRange ?? BASE_SENSOR_RANGE;
     this.baseSensorRange = this.sensorRange; // pre-upgrade range
+    // Falling Frontier CIW: ships with a Point Defense module swat
+    // incoming homing missiles within interceptRange.
+    this.interceptRange = interceptRange ?? 0;
+    this.pointDefense = this.interceptRange > 0;
+    this.ciwCd = 0; // CIW interceptor cooldown
+    this.sideCd = 0; // broadside cannon cooldown
   }
 
   get position() { return this.physics.position; }
@@ -78,6 +84,8 @@ export class Ship {
     this.alive = true;
     this.invulnerableTime = invulnerableSeconds;
     this.fireCooldown = 0;
+    this.ciwCd = 0;
+    this.sideCd = 0;
     this.ramCooldown = 0;
     if (this.mesh) this.mesh.visible = true;
     this.syncMesh(0);

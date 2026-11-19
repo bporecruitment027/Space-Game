@@ -59,6 +59,7 @@ export class Projectiles {
         turnRate: 0,
         seekRange: 0,
         targetId: null,
+        interceptor: false, // CIW bolt: swats missiles, harms nothing else
       });
     }
   }
@@ -69,7 +70,7 @@ export class Projectiles {
    * @param {object} opts        { speed, damage, life, color, scale }
    * @returns {boolean} false if the pool is exhausted.
    */
-  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff, scale = 1, homing = false, turnRate = 0, seekRange = 0, targetId = null } = {}) {
+  fire(ship, { speed = 140, damage = 12, life = 2.2, color = 0x7fe3ff, scale = 1, homing = false, turnRate = 0, seekRange = 0, targetId = null, interceptor = false } = {}) {
     const bolt = this.pool.find((b) => !b.active);
     if (!bolt) return false;
 
@@ -88,6 +89,7 @@ export class Projectiles {
     bolt.turnRate = turnRate;
     bolt.seekRange = seekRange;
     bolt.targetId = targetId;
+    bolt.interceptor = interceptor;
     if (!this.headless) {
       bolt.mesh.material.color.setHex(color);
       bolt.mesh.scale.setScalar(scale);
@@ -112,6 +114,34 @@ export class Projectiles {
    * @param {Array} asteroids  Asteroids to test against.
    */
   update(dt, onHit, ships, asteroids) {
+    // CIW interception (Falling Frontier "long war" flavour): interceptor
+    // bolts home onto the nearest incoming missile and detonate it mid-flight.
+    for (let i = this.active.length - 1; i >= 0; i--) {
+      const ic = this.active[i];
+      if (!ic.interceptor) continue;
+      let best = null;
+      let bestD = 2.0; // detonation radius
+      for (const m of this.active) {
+        if (m === ic || !m.homing || m.ownerId === ic.ownerId) continue;
+        const dx = m.position.x - ic.position.x;
+        const dz = m.position.z - ic.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d < bestD) { bestD = d; best = m; }
+      }
+      if (best) {
+        onHit(ic, { kind: 'missile', ref: best });
+        // Take the missile down with the interceptor.
+        best.life = 0;
+        best.active = false;
+        if (!this.headless) {
+          best.mesh.visible = false;
+          if (best.trail) best.trail.visible = false;
+        }
+        this.active.splice(this.active.indexOf(best), 1);
+        this.pool.push(this.pool.shift());
+      }
+    }
+
     for (let i = this.active.length - 1; i >= 0; i--) {
       const bolt = this.active[i];
       bolt.life -= dt;
@@ -175,14 +205,16 @@ export class Projectiles {
       }
 
       if (!dead) {
-        // vs asteroids
+        // vs asteroids. Homing missiles that stray into the rock field
+        // detonate on the rock (Falling Frontier: missiles get lost to
+        // asteroids); conventional bolts carve into the rock normally.
         for (const rock of asteroids) {
           if (!rock.alive) continue;
           const dx = bolt.position.x - rock.position.x;
           const dz = bolt.position.z - rock.position.z;
-          const r = rock.radius + 0.4;
+          const r = rock.radius + (bolt.homing ? 3.0 : 0.4);
           if (dx * dx + dz * dz < r * r) {
-            onHit(bolt, { kind: 'asteroid', ref: rock });
+            onHit(bolt, { kind: 'asteroid', ref: rock, detonate: !!bolt.homing });
             dead = true;
             break;
           }

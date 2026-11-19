@@ -59,12 +59,19 @@ export class KeyboardInput {
     if (k.has('KeyD') || k.has('ArrowRight')) yaw += 1;
     if (k.has('KeyA') || k.has('ArrowLeft')) yaw -= 1;
 
+    // Q/E fire the broadside cannons port/starboard (Falling Frontier
+    // close-range warfare). Held with their own cooldown in the game.
+    let side = 0;
+    if (k.has('KeyQ')) side -= 1;
+    if (k.has('KeyE')) side += 1;
+
     return {
       thrust,
       yaw,
       brake: k.has('KeyX') || k.has('Space'),
       boost: k.has('ShiftLeft') || k.has('ShiftRight'),
       fire: k.has('KeyJ'),
+      side,
     };
   }
 

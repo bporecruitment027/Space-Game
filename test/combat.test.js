@@ -412,3 +412,76 @@ test('M5: ore is credited to the killing ship (not a bystander)', () => {
   assert.equal(game.enemies[0].ore, 0, 'bystanders get no ore');
   assert.equal(game.enemies[1].ore, 0, 'bystanders get no ore');
 });
+
+// ---------------------------------------------------------------------------
+// Falling Frontier playstyle: CIW point defense, missile detonation,
+// broadside cannons
+// ---------------------------------------------------------------------------
+
+test('FF: CIW point defense swats an incoming homing missile', () => {
+  const { game } = makeGame(1);
+  game.deploy({ hull: 'fighter', weapon: 'missile', modules: [] });
+  const enemy = game.enemies[0];
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 999; // keep the sim alive for the window
+  // Heavy enemy hull mounts CIW (spawnEnemies); park it 25 m ahead.
+  enemy.spawn(0, 25, Math.PI, 0);
+  enemy.invulnerableTime = 0;
+  game.asteroids = {
+    entities: [], destroyedThisTick: [], update() {}, hit() {}, clear() {},
+    shipCollisionCandidates() { return []; }, ramDamage: () => 0,
+  };
+
+  let intercepted = false;
+  game.onEvent = (name) => { if (name === 'missile-intercepted') intercepted = true; };
+  for (let i = 0; i < 360 && !intercepted; i++) {
+    game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
+  }
+  assert.ok(intercepted, 'CIW detonated the incoming missile');
+  assert.ok(enemy.alive, 'enemy survived the swatted missile');
+});
+
+test('FF: homing missiles detonate against asteroids (lost to the field)', () => {
+  const { game } = makeGame(1);
+  game.deploy({ hull: 'fighter', weapon: 'missile', modules: [] });
+  game.asteroids.clear();
+  const rock = game.asteroids.spawn(false, {
+    position: { x: 0, z: 15 }, radius: 5, velocity: { x: 0, z: 0 },
+  });
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 999;
+  // Enemy parked far beyond missile seek range — straight flight into the rock.
+  game.enemies[0].spawn(200, 200, 0, 0);
+  game.enemies[0].invulnerableTime = 0;
+
+  let detonated = false;
+  game.onEvent = (name) => { if (name === 'missile-detonated') detonated = true; };
+  for (let i = 0; i < 360 && !detonated; i++) {
+    game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: true });
+  }
+  assert.ok(detonated, 'missile detonated on the rock');
+  assert.equal(rock.alive, true, 'rock survives a missile detonation');
+});
+
+test('FF: broadside cannons fire perpendicular to the hull', () => {
+  const { game } = makeGame(1);
+  game.deploy({ hull: 'fighter', weapon: 'laser', modules: [] });
+  game.player.spawn(0, 0, 0, 0);
+  game.player.invulnerableTime = 999;
+  game.enemies[0].spawn(200, 200, 0, 0);
+  game.enemies[0].invulnerableTime = 0;
+  game.asteroids = {
+    entities: [], destroyedThisTick: [], update() {}, hit() {}, clear() {},
+    shipCollisionCandidates() { return []; }, ramDamage: () => 0,
+  };
+  game.projectiles.clear();
+
+  // Heading 0 → forward +Z; side -1 (port) fires perpendicular → -X.
+  game.step(1 / 120, { thrust: 0, yaw: 0, brake: false, boost: false, fire: false, side: -1 });
+
+  const bolts = game.projectiles.active.filter((b) => b.ownerId === 'player');
+  assert.ok(bolts.length >= 1, 'broadside fired a bolt');
+  const b = bolts[bolts.length - 1];
+  assert.ok(b.velocity.x < 0, 'port broadside bolt travels -X');
+  assert.ok(Math.abs(b.velocity.z) < 1, 'port broadside bolt has no +Z component');
+});

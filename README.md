@@ -4,11 +4,15 @@ Browser-first realistic space combat game — overhead combat, Newtonian
 (zero-gravity) flight physics, modular ships, and (from Milestone 4)
 authoritative multiplayer. Built with Three.js (WebGL2).
 
-**Current status: Milestone 5 — Content Expansion.** Skirmish mode with
+**Current status: Milestone 5 — Content Expansion + Falling Frontier overhaul.**
+Skirmish mode with
 data-driven loadouts (four hulls, three weapons including homing
 missiles, three modules), laser/railgun/missile combat, sensor-based fog
 of war with a live radar, an authoritative multiplayer server, and an
-asteroid-mining ore economy with a repeatable upgrade shop. See
+asteroid-mining ore economy with a repeatable upgrade shop — restyled
+toward Falling Frontier's military space-combat-sim look (explosive
+destruction, CIW point defense, missile detonations against asteroid
+cover, broadside cannons, LiDAR scan flavour). See
 [`docs/GDD.md`](docs/GDD.md) for the full design spec and milestone
 plan.
 

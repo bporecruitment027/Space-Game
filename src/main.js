@@ -152,6 +152,11 @@ netUI.onJoin = (url) => {
     } else if (event.name === 'upgrade-failed') {
       toasts.push({ text: `Upgrade failed: ${event.data}`, t: 2.6 });
       renderToasts();
+    } else if (event.name === 'missile-intercepted' || event.name === 'missile-detonated') {
+      // CIW swat or missile lost to a rock — small blast, no light.
+      if (typeof event.data.x === 'number') {
+        effects.explode(event.data.x, event.data.z, { color: 0xbfe8ff, scale: 0.7, light: false });
+      }
     }
   };
   net.onSnapshot = (snap) => {
@@ -184,6 +189,11 @@ game.onEvent = (name, data) => {
     if (typeof data.x === 'number') effects.explode(data.x, data.z, { color: 0xff4444, scale: 2.0 });
   } else if (name === 'asteroid-destroyed') {
     effects.explode(data.x, data.z, { color: data.rich ? 0xffd479 : 0xb8a88c, scale: data.rich ? 1.2 : 0.8, light: false });
+  } else if (name === 'missile-intercepted' || name === 'missile-detonated') {
+    // CIW swat or missile lost to a rock — small cyan blast, no light.
+    if (typeof data.x === 'number') {
+      effects.explode(data.x, data.z, { color: 0xbfe8ff, scale: 0.7, light: false });
+    }
   } else if (name === 'ore') toasts.push({ text: `+${data.amount} ore${data.rich ? ' (rich!)' : ''}`, t: 2.0 });
   else if (name === 'upgrade') toasts.push({ text: `Upgrade: ${data.upgrade} → Lv${data.level}`, t: 2.6 });
   else if (name === 'game-over') {
@@ -213,6 +223,7 @@ let accumulator = 0;
 let lastTime = performance.now();
 let fpsFrames = 0;
 let fpsTime = 0;
+let scanTimer = 0; // LiDAR scan pulse accumulator
 let fps = 60;
 
 /** Network-mode boost bar: mirror the server's drain/recharge rates. */
@@ -355,6 +366,19 @@ function frame(now) {
   // Advance environment (nebula drift, dust) + explosion effects.
   environment.update(dt);
   effects.update(dt);
+
+  // In-world LiDAR scan pulse (Falling Frontier "information
+  // acquisition"): a sweeping ring around the ship every few seconds.
+  scanTimer += dt;
+  if (scanTimer >= 2.5) {
+    scanTimer = 0;
+    const pulseShip = (mode === 'network' && net && net.shipId)
+      ? net.remoteShips.get(net.shipId)?.ship
+      : game.player;
+    if (pulseShip && pulseShip.alive) {
+      effects.scanPulse(pulseShip.position.x, pulseShip.position.z);
+    }
+  }
 
   // Resolve the camera target + HUD source for the active mode.
   let camPos, camVel, camHeading, hudShip, hudGame, boostFraction;

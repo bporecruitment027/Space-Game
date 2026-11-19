@@ -96,6 +96,9 @@ export const MODULE_DEFS = {
   sensor: { name: 'Sensor Array', sensorRange: 70 },
   armor: { name: 'Reinforced Armor', healthMultiplier: 1.5 },
   engine: { name: 'Engine Tuning', thrustBonus: 0.25 },
+  // Falling Frontier flavour: close-in weapon (CIW) that swats incoming
+  // homing missiles out of the sky.
+  pointdefense: { name: 'Point Defense', interceptRange: 48 },
 };
 
 export const MAX_MODULES = 2;
@@ -167,6 +170,7 @@ export function deriveStats(loadout) {
     if (m.sensorRange) stats.sensorRange += m.sensorRange;
     if (m.healthMultiplier) stats.maxHealth = Math.round(stats.maxHealth * m.healthMultiplier);
     if (m.thrustBonus) stats.maxThrust = Math.round(stats.maxThrust * (1 + m.thrustBonus));
+    if (m.interceptRange) stats.interceptRange = m.interceptRange;
   }
 
   return stats;

@@ -33,6 +33,8 @@ on desktop, ~30 fps on mobile.
 
 ## 3. Controls
 
+`Q` / `E` fire the broadside cannons port/starboard (see §5).
+
 | Input | Action |
 |---|---|
 | `W` / `↑` | Main thruster (forward) |
@@ -92,6 +94,25 @@ fragments into two smaller chunks flying apart, down to a minimum
 radius. Ramming an asteroid deals closing-speed-scaled damage to the
 ship and pushes both apart. The field trickles respawns so the arena
 keeps cover without a level file.
+
+**Falling Frontier flavour (visual + playstyle overhaul).** Combat is
+tuned toward a simulated military space-combat feel rather than an
+arcade shooter:
+
+- **Destruction.** Kills, player deaths, and asteroid shatters spawn
+  pooled explosions (shockwave ring + debris sparks + brief light);
+  ships break apart where they die.
+- **CIW point defense.** The `pointdefense` module gives a ship a
+  close-in weapon that swats incoming homing missiles out of the sky
+  within ~48 m. Heavy enemy hulls mount CIW.
+- **Missiles vs. the field.** Homing missiles that stray into an
+  asteroid's vicinity detonate on the rock — asteroid clusters are real
+  missile cover, matching the reference's mid-range warfare.
+- **Broadsides.** `Q`/`E` fire port/starboard cannons perpendicular to
+  the hull: maneuvering abreast of an enemy is what lines up the kill.
+- **In-world scanning.** A periodic LiDAR scan pulse expands from the
+  ship, and the radar shows a rotating scan sweep with lock-bracket
+  (tracked) and ping-ring (ghost) contact markers.
 
 **Enemy AI.** Simple steering state machine (behaviour trees arrive in
 M3): close distance when far, hold range and yaw to aim when in

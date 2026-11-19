@@ -228,3 +228,13 @@ test('M5: missile loadout validates and derives', () => {
   assert.equal(s.fire.name, 'Missile');
   assert.equal(s.hull, 'scout');
 });
+
+test('FF: point defense module grants CIW intercept range', () => {
+  const stats = deriveStats({ hull: 'fighter', weapon: 'laser', modules: ['pointdefense'] });
+  assert.equal(stats.interceptRange, 48);
+});
+
+test('FF: default loadout has no CIW intercept range', () => {
+  const stats = deriveStats({ hull: 'fighter', weapon: 'laser', modules: [] });
+  assert.equal(stats.interceptRange, undefined);
+});

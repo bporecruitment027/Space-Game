@@ -59,6 +59,7 @@ export class Game {
       radius: stats.radius,
       weapon: stats.fire,
       sensorRange: stats.sensorRange,
+      interceptRange: stats.interceptRange,
       headless: this.headless,
     });
     this.enemies = [];
@@ -97,6 +98,7 @@ export class Game {
       radius: stats.radius,
       weapon: stats.fire,
       sensorRange: stats.sensorRange,
+      interceptRange: stats.interceptRange,
     });
     if (old && !this.headless) this.scene.remove(old.mesh);
     if (!this.headless) this.scene.add(this.player.mesh);
@@ -150,6 +152,9 @@ export class Game {
         headless: this.headless,
       });
       if (!this.headless) this.scene.add(ship.mesh);
+      // Heavy enemy hulls mount CIW point defense (Falling Frontier).
+      ship.interceptRange = 48;
+      ship.pointDefense = true;
       ship.spawn(Math.cos(angle) * r, Math.sin(angle) * r, angle + Math.PI + Math.random() * 0.6, 1.0);
       this.enemies.push(ship);
     }
@@ -185,6 +190,28 @@ export class Game {
       if (!player.alive) continue;
       const cmd = inputMap.get(player.id) ?? { thrust: 0, yaw: 0, brake: false, boost: false, fire: false };
       this._applyShipCommand(player, cmd, dt);
+    }
+
+    // 2b. CIW point defense (Falling Frontier "long war"): ships fitted
+    // with Point Defense swat incoming homing missiles within range.
+    for (const ship of this._allShips()) {
+      if (!ship.alive || !ship.pointDefense || ship.ciwCd > 0) continue;
+      for (const bolt of this.projectiles.active) {
+        if (!bolt.homing || bolt.ownerId === ship.id) continue;
+        const dx = ship.position.x - bolt.position.x;
+        const dz = ship.position.z - bolt.position.z;
+        const d = Math.hypot(dx, dz);
+        if (d > ship.interceptRange) continue;
+        // Only engage missiles that are actually approaching.
+        const closing = (dx / (d || 1)) * bolt.velocity.x + (dz / (d || 1)) * bolt.velocity.z;
+        if (closing <= 0) continue;
+        this.projectiles.fire(ship, {
+          speed: 190, damage: 0, life: 1.4, color: 0xbfe8ff, scale: 0.6,
+          homing: true, turnRate: 7, seekRange: 60, interceptor: true,
+        });
+        ship.ciwCd = 0.4;
+        break;
+      }
     }
 
     // 3. Bolt rules.
@@ -286,9 +313,58 @@ export class Game {
       });
       if (ok) ship.fireCooldown = w.cooldown;
     }
+    // Broadside cannons (Falling Frontier close-range warfare): Q/E
+    // fire the port/starboard guns perpendicular to the hull, so
+    // maneuvering abreast of an enemy is what lines up the kill.
+    if (cmd.side !== 0 && ship.sideCd <= 0 && ship.alive) {
+      const f = ship.physics.forward;
+      const side = cmd.side > 0 ? 1 : -1;
+      // Perpendicular to forward: (fz, -fx) is starboard, negated is port.
+      const px = f.z * side;
+      const pz = -f.x * side;
+      const weapon = ship.weapon;
+      const ok = this.projectiles.fire(ship, {
+        speed: 130,
+        damage: weapon.damage * 0.6 * ship.damageMult,
+        life: 1.6,
+        color: weapon.color ?? 0x7fe3ff,
+        scale: 0.8,
+        homing: weapon.homing ?? false,
+        turnRate: weapon.turnRate ?? 0,
+        seekRange: weapon.seekRange ?? 0,
+      });
+      if (ok) {
+        // Re-aim the bolt along the broadside axis (fire() aims forward).
+        const bolt = this.projectiles.active[this.projectiles.active.length - 1];
+        const speed = 130;
+        bolt.velocity.x = px * speed + ship.velocity.x * 0.5;
+        bolt.velocity.z = pz * speed + ship.velocity.z * 0.5;
+        bolt.position.x = ship.position.x + px * 2.4;
+        bolt.position.z = ship.position.z + pz * 2.4;
+        ship.sideCd = 0.45;
+      }
+    }
   }
 
   _onBoltHit(bolt, hit) {
+    if (hit.kind === 'missile') {
+      // CIW swatted a homing missile mid-flight (Falling Frontier).
+      const m = hit.ref;
+      this.emit('missile-intercepted', { x: m.position.x, z: m.position.z });
+      return;
+    }
+    if (hit.kind === 'asteroid') {
+      const rock = hit.ref;
+      if (hit.detonate) {
+        // Homing missile lost to the rock field — it detonates on impact.
+        this.emit('missile-detonated', { x: bolt.position.x, z: bolt.position.z });
+        return;
+      }
+      // Record the shooter so the killing blow credits the rock's ore.
+      this.asteroids.hit(rock, bolt.damage, bolt.ownerId);
+      this.emit('asteroid-hit');
+      return;
+    }
     if (hit.kind === 'ship') {
       const target = hit.ref;
       const killed = target.takeDamage(bolt.damage);
@@ -428,6 +504,7 @@ export class Game {
       radius: stats.radius,
       weapon: stats.fire,
       sensorRange: stats.sensorRange,
+      interceptRange: stats.interceptRange,
       headless: this.headless,
     });
     if (!this.headless) this.scene.add(ship.mesh);
